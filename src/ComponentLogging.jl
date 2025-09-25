@@ -2,7 +2,7 @@ module ComponentLogging
 using Logging
 export ComponentLogger, get_logger, set_module_logger
 export clog, clogenabled, clogf
-export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled
+export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf
 
 const RuleKey = NTuple{N,Symbol} where {N}
 const DEFAULT_SYM = :__default__
@@ -140,14 +140,6 @@ clog(logger::AbstractLogger, level::Union{Integer,LogLevel}, message...;
     file=nothing, line=nothing, kwargs...) =
     clog(logger, (DEFAULT_SYM,), level, message...; file, line, kwargs...)
 
-clog(group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...;
-    file=nothing, line=nothing, kwargs...) =
-    clog(get_logger(@__MODULE__), group, level, message...; file, line, kwargs...)
-
-clog(level::Union{Integer,LogLevel}, message...;
-    file=nothing, line=nothing, kwargs...) =
-    clog(get_logger(@__MODULE__), (DEFAULT_SYM,), level, message...; file, line, kwargs...)
-
 ## clogenabled
 function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
     grp = _tokey(group)
@@ -157,12 +149,6 @@ end
 
 clogenabled(logger::AbstractLogger, level::Union{Integer,LogLevel}) =
     clogenabled(logger, (DEFAULT_SYM,), level)
-
-clogenabled(group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}) =
-    clogenabled(get_logger(@__MODULE__), group, level)
-
-clogenabled(level::Union{Integer,LogLevel}) =
-    clogenabled(get_logger(@__MODULE__), (DEFAULT_SYM,), level)
 
 ## clogf
 @inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Nothing where {F<:Function}
@@ -179,12 +165,6 @@ end
 
 @inline clogf(f::F, logger::AbstractLogger, level::Union{Integer,LogLevel}) where {F<:Function} =
     clogf(f, logger, (DEFAULT_SYM,), level)
-
-@inline clogf(f::F, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}) where {F<:Function} =
-    clogf(f, get_logger(@__MODULE__), group, level)
-
-@inline clogf(f::F, level::Union{Integer,LogLevel}) where {F<:Function} =
-    clogf(f, get_logger(@__MODULE__), (DEFAULT_SYM,), level)
 
 ## Module binding macro                                                                             
 """
@@ -277,7 +257,53 @@ macro clog(args...)
             _lvl = LogLevel($(esc(lvl_ex)))
             _grp = $grp_ast
             if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
-                Logging.handle_message(_lg, _lvl, $msg_tuple, @__MODULE__, _grp, nothing, @__FILE__, @__LINE__)
+                Logging.handle_message(_lg, _lvl, $msg_tuple, @__MODULE__, _grp, nothing,
+                    @__FILE__, @__LINE__)
+            end
+            nothing
+        end
+    )
+end
+
+macro clogf(args...)
+    n = length(args)
+    n >= 2 || error("@clogf: need (level, expr) or (group, level, expr)")
+
+    is_sym_lit(ex) = (ex isa QuoteNode && ex.value isa Symbol)
+    is_symtuple_lit(ex) = ex isa Expr && ex.head === :tuple &&
+                          all(a -> (a isa QuoteNode && a.value isa Symbol), ex.args)
+
+    grp_ast = :((ComponentLogging.DEFAULT_SYM,))  # default group
+
+    looks_like_group = (args[1] isa Symbol) || (args[1] isa Expr && args[1].head === :tuple) ||
+                       (args[1] isa QuoteNode)
+    if looks_like_group
+        if !(is_sym_lit(args[1]) || is_symtuple_lit(args[1]))
+            error("@clogf: group must be a literal Symbol like :core or a tuple of literal Symbols like (:a,:b)")
+        end
+        grp_ast = is_sym_lit(args[1]) ? Expr(:tuple, args[1]) : args[1]
+        n >= 3 || error("@clogf: with group, need (group, level, expr)")
+        lvl_ex = args[2]
+        body_ex = args[3]
+    else
+        lvl_ex = args[1]
+        body_ex = args[2]
+    end
+
+    return :(
+        let _lg = ComponentLogging.get_logger(@__MODULE__)
+            _lvl = LogLevel($(esc(lvl_ex)))
+            _grp = $grp_ast
+            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
+                # evaluate lazily and normalize to tuple
+                _msg = $(esc(body_ex))
+                if _msg isa Function
+                    _msg = _msg()
+                end
+                if _msg !== nothing
+                    Logging.handle_message(_lg, _lvl, ComponentLogging.msg_to_tuple(_msg),
+                        @__MODULE__, _grp, nothing, @__FILE__, @__LINE__)
+                end
             end
             nothing
         end
