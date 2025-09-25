@@ -72,7 +72,7 @@ using Test
 
     @testset "set_log_level! affects min" begin
         # Construct a standalone logger and adjust levels
-        local logger = ComponentLogger(Dict(); sink)
+        local logger = ComponentLogger(sink)
         @test Logging.min_enabled_level(logger) === Info
         ComponentLogging.set_log_level!(logger, (:foo,), Debug)
         @test Logging.min_enabled_level(logger) === Debug
@@ -89,7 +89,7 @@ end;
     # 1) Basic logging into an IOBuffer via PlainLogger sink
     pbuf = IOBuffer()
     plogger = PlainLogger(pbuf, Debug)
-    clogger = ComponentLogger(Dict((:__default__,) => Info); sink=plogger)
+    clogger = ComponentLogger(sink=plogger)
     set_module_logger(@__MODULE__, clogger)
 
     # ensure info is emitted to pbuf
@@ -105,7 +105,7 @@ end;
     # 2) Warn and location: using macro to ensure file/line is passed
     pbuf2 = IOBuffer()
     plogger2 = PlainLogger(pbuf2, Debug)
-    clogger2 = ComponentLogger(Dict((:__default__,) => Info); sink=plogger2)
+    clogger2 = ComponentLogger(sink=plogger2)
     set_module_logger(@__MODULE__, clogger2)
     @clog :core Warn "warn here"
     out2 = String(take!(pbuf2))
@@ -113,20 +113,19 @@ end;
     @test occursin("@ runtests.jl", out2)  # basename present
 
     # 3) closed-stream fallback to stderr (use Pipe on Windows)
-    plogger3 = PlainLogger(Info)  # uses Base.CoreLogging.closed_stream
-    clogger3 = ComponentLogger(Dict((:__default__,) => Info); sink=plogger3)
+    plogger3 = PlainLogger(Info)
+    clogger3 = ComponentLogger(sink=plogger3)
     set_module_logger(@__MODULE__, clogger3)
-    r = Pipe()
+
     w = Pipe()
     redirect_stderr(w)
     try
         clog(clogger3, Warn, "fallback to stderr")
-        close(w.in)
-        data = read(w.out, String)
-        @test occursin("fallback to stderr", data)
+        flush(stderr)
     finally
-        redirect_stderr(stdout)  # restore
-        close(r)
-        close(w)
+        redirect_stderr(stdout)
     end
-end
+    close(w.in)
+    data = read(w, String)
+    @test occursin("fallback to stderr", data)
+end;

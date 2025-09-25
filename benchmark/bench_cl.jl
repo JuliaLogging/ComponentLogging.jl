@@ -1,6 +1,6 @@
 using BenchmarkTools, Logging, Printf
 
-# ---- 空写入 sink（避免 I/O）----
+# Null sink (avoid I/O)
 struct NullSinkLogger <: AbstractLogger
     minlevel::LogLevel
 end
@@ -9,14 +9,16 @@ Logging.shouldlog(::NullSinkLogger, args...) = true
 Logging.handle_message(::NullSinkLogger, args...; kwargs...) = nothing
 Logging.catch_exceptions(::NullSinkLogger) = false
 
-# ---- 载入 ComponentLogging ----
+#──────────────────────────────────────────────────────────────────────────────────────────
+# Load ComponentLogging
 # include("ComponentLogging.jl")
 const CL = ComponentLogging
 const RK = CL.RuleKey
 const DEFAULT = (CL.DEFAULT_SYM,)
 
-# ---- 构造 logger ----
-# 规则里显式加入：默认组、:opti、(:a,:b)、(:a,:b,:c,:d,:e,:f,:g,:h)
+#──────────────────────────────────────────────────────────────────────────────────────────
+# Create logger
+# Explicitly add rules for: default group, :opti, (:a,:b), and (:a,:b,:c,:d,:e,:f,:g,:h)
 const TUP2 = (:a, :b)
 const TUP8 = (:a, :b, :c, :d, :e, :f, :g, :h)
 
@@ -30,12 +32,13 @@ function make_logger(minlvl::LogLevel)
     return CL.ComponentLogger(rules; sink=NullSinkLogger(Debug))
 end
 
-const LG_ENABLED  = make_logger(Info)   # 放行 Info
-const LG_FILTERED = make_logger(Error)  # 过滤 Info
+const LG_ENABLED  = make_logger(Info)   # Allow Info level
+const LG_FILTERED = make_logger(Error)  # Filter out Info level
 
-# ---- 基准用的消息/闭包 ----
+#──────────────────────────────────────────────────────────────────────────────────────────
+# Benchmark messages/closures
 const MSG_STR = "x"
-const MSG_TUP = ("x", 123, :sym)   # 多参数/混合类型
+const MSG_TUP = ("x", 123, :sym)   # Multiple arguments/mixed types
 const HEAVY_1 = () -> begin
     s = 0.0
     @inbounds for i = 1:200
@@ -51,47 +54,48 @@ const HEAVY_1_NOLOG = () -> begin
     nothing
 end
 
-# 注意：你当前的 clogf 定义是 (f, lg, group, level)
-# 为了写起来像 do 语法，这里加个轻便转发（不改包内代码）
+#──────────────────────────────────────────────────────────────────────────────────────────
+# Lightweight forwarding
 @inline _clogf_call(lg, group, lvl, f) = CL.clogf(f, lg, group, lvl)
 @inline _clogf_call_default(lg, lvl, f) = CL.clogf(f, lg, DEFAULT, lvl)
 
-# ---- 构建基准组 ----
+#──────────────────────────────────────────────────────────────────────────────────────────
 const SUITE = BenchmarkGroup()
 
-# 1) 过滤路径（min=Error，发 Info）——判定与路由成本
+# 1) Filtered path (min=Error, sending Info) - Decision and routing cost
 SUITE["filtered"]                  = BenchmarkGroup()
 SUITE["filtered"]["clog/default"]  = @benchmarkable CL.clog($LG_FILTERED, $DEFAULT, Info, $MSG_STR)
 SUITE["filtered"]["clog/symbol"]   = @benchmarkable CL.clog($LG_FILTERED, :opti, Info, $MSG_STR)
 SUITE["filtered"]["clog/tuple2"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP2, Info, $MSG_STR)
 SUITE["filtered"]["clog/tuple8"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP8, Info, $MSG_STR)
-SUITE["filtered"]["clogf/default"] = @benchmarkable _clogf_call_default($LG_FILTERED, Info, $HEAVY_1)     # 不应执行 HEAVY_1
+SUITE["filtered"]["clogf/default"] = @benchmarkable _clogf_call_default($LG_FILTERED, Info, $HEAVY_1)     # HEAVY_1 should not execute
 SUITE["filtered"]["clogf/symbol"]  = @benchmarkable _clogf_call($LG_FILTERED, :opti, Info, $HEAVY_1)
 SUITE["filtered"]["clogf/tuple2"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP2, Info, $HEAVY_1)
 SUITE["filtered"]["clogf/tuple8"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP8, Info, $HEAVY_1)
 
-# 2) 放行路径（min=Info，发 Info）——判定 + 组装 + 调用
+# 2) Allowed path (min=Info, sending Info) - Decision + assembly + call
 SUITE["enabled"] = BenchmarkGroup()
-# 2.1 单字符串
+# 2.1 Single string
 SUITE["enabled"]["clog/default/str"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_STR)
 SUITE["enabled"]["clog/symbol/str"]  = @benchmarkable CL.clog($LG_ENABLED, :opti, Info, $MSG_STR)
 SUITE["enabled"]["clog/tuple2/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_STR)
 SUITE["enabled"]["clog/tuple8/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_STR)
-# 2.2 多参数/混合类型
+# 2.2 Multiple arguments/mixed types
 SUITE["enabled"]["clog/default/tuple"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_TUP...)
 SUITE["enabled"]["clog/tuple2/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_TUP...)
 SUITE["enabled"]["clog/tuple8/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_TUP...)
-# 2.3 clogf：放行时才执行重活
+# 2.3 clogf: Only execute heavy work when allowed
 SUITE["enabled"]["clogf/default/heavy"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1)
 SUITE["enabled"]["clogf/tuple2/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP2, Info, $HEAVY_1)
 SUITE["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP8, Info, $HEAVY_1)
-# 2.4 clogf：放行但选择不输出（返回 nothing）
+# 2.4 clogf: Allowed but chose not to output (returns nothing)
 SUITE["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1_NOLOG)
 
-# 3) 微观对照：显式 logger vs 隐式（若你保留了无 lg 的重载，可解注测试）
+# 3) Micro comparison: Explicit logger vs implicit (uncomment to test if you keep the overload without lg)
 # SUITE["enabled"]["clog/implicit"] = @benchmarkable CL.clog(:opti, Info, $MSG_STR)
 
-# ---- 运行 & 展示 ----
+#──────────────────────────────────────────────────────────────────────────────────────────
+# Run & Display
 tune!(SUITE; seconds=2.0)
 results = run(SUITE; verbose=true)
 

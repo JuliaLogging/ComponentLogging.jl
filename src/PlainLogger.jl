@@ -42,7 +42,7 @@ function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _modul
         pretty(v)
     end
 
-    if level >= Warn && file !== nothing
+    if file !== nothing
         println(iob)
         printstyled(iob, "@ ", Base.basename(String(file)); color)
         if line !== nothing

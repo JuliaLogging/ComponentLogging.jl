@@ -101,10 +101,11 @@ Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _modul
 const _REGISTRY_LOCK = ReentrantLock()
 const _REGISTRY = IdDict{Module,AbstractLogger}()
 
-function set_module_logger(mod::Module, logger::AbstractLogger)
+function set_module_logger(mod::Module, logger::AbstractLogger)::String
     lock(_REGISTRY_LOCK) do
         _REGISTRY[mod] = logger
     end
+    string(mod) * " <- " * string(typeof(logger))
 end
 
 "Get the logger for the calling module; if unbound, fallback through parent modules; error at the top"
@@ -255,14 +256,14 @@ macro clog(args...)
     end
 
     msg_tuple = Expr(:tuple, map(esc, msg_ps)...)
-
+    mod, file, line = Base.CoreLogging.@_sourceinfo
     return :(
-        let (_mod, _file, _line) = Base.CoreLogging.@_sourceinfo()
-            local _lg = ComponentLogging.get_logger(_mod)
-            local _lvl = LogLevel($(esc(lvl_ex)))
-            local _grp = $grp_ast
-            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, _mod, _grp, nothing)
-                Logging.handle_message(_lg, _lvl, $msg_tuple, _mod, _grp, nothing, _file, _line)
+        let _lg = ComponentLogging.get_logger($mod),
+            _lvl = LogLevel($(esc(lvl_ex))),
+            _grp = $grp_ast
+
+            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, $mod, _grp, nothing)
+                Logging.handle_message(_lg, _lvl, $msg_tuple, $mod, _grp, nothing, $file, $line)
             end
             nothing
         end
@@ -294,20 +295,20 @@ macro clogf(args...)
         body_ex = args[2]
     end
 
+    mod, file, line = Base.CoreLogging.@_sourceinfo
     return :(
-        let (_mod, _file, _line) = Base.CoreLogging.@_sourceinfo()
-            local _lg = ComponentLogging.get_logger(_mod)
-            local _lvl = LogLevel($(esc(lvl_ex)))
-            local _grp = $grp_ast
-            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, _mod, _grp, nothing)
-                # evaluate lazily and normalize to tuple
+        let _lg = ComponentLogging.get_logger($mod),
+            _lvl = LogLevel($(esc(lvl_ex))),
+            _grp = $grp_ast
+
+            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, $mod, _grp, nothing)
                 _msg = $(esc(body_ex))
                 if _msg isa Function
                     _msg = _msg()
                 end
                 if _msg !== nothing
                     Logging.handle_message(_lg, _lvl, ComponentLogging.msg_to_tuple(_msg),
-                        _mod, _grp, nothing, _file, _line)
+                        $mod, _grp, nothing, $file, $line)
                 end
             end
             nothing
@@ -326,7 +327,8 @@ macro clogenabled(group, lvl)
         "or a tuple literal of Symbols like (:net,:http)")
 
     return :(
-        let _lg = ComponentLogging.get_logger(@__MODULE__)
+        let
+            _lg = ComponentLogging.get_logger(@__MODULE__)
             _lvl = LogLevel($(esc(lvl)))
             _grp = $grp_ast
             _lvl >= Logging.min_enabled_level(_lg) &&

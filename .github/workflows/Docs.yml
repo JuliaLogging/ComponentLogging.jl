@@ -15,7 +15,7 @@ jobs:
       - uses: actions/checkout@v5
       - uses: julia-actions/setup-julia@v2
         with:
-          version: '1.10'
+          version: '1'
       - name: Instantiate docs env
         run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
       - name: Build docs
