@@ -72,7 +72,7 @@ using Test
 
     @testset "set_log_level! affects min" begin
         # Construct a standalone logger and adjust levels
-        local logger = ComponentLogger(sink)
+        local logger = ComponentLogger(Dict{Nothing,Nothing}(); sink)
         @test Logging.min_enabled_level(logger) === Info
         ComponentLogging.set_log_level!(logger, (:foo,), Debug)
         @test Logging.min_enabled_level(logger) === Debug
