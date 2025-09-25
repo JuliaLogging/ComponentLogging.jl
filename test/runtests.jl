@@ -84,3 +84,49 @@ using Test
         @test !isempty(String(take!(buf)))
     end
 end;
+
+@testset "PlainLogger + ComponentLogger" begin
+    # 1) Basic logging into an IOBuffer via PlainLogger sink
+    pbuf = IOBuffer()
+    plogger = PlainLogger(pbuf, Debug)
+    clogger = ComponentLogger(Dict((:__default__,) => Info); sink=plogger)
+    set_module_logger(@__MODULE__, clogger)
+
+    # ensure info is emitted to pbuf
+    clog(clogger, Info, "plain info")
+    @test !isempty(String(take!(pbuf)))
+
+    # kwargs appear
+    clog(clogger, Info, "with kw"; a=1, b="x")
+    out = String(take!(pbuf))
+    @test occursin("a = 1", out)
+    @test occursin("b = x", out)
+
+    # 2) Warn and location: using macro to ensure file/line is passed
+    pbuf2 = IOBuffer()
+    plogger2 = PlainLogger(pbuf2, Debug)
+    clogger2 = ComponentLogger(Dict((:__default__,) => Info); sink=plogger2)
+    set_module_logger(@__MODULE__, clogger2)
+    @clog :core Warn "warn here"
+    out2 = String(take!(pbuf2))
+    @test occursin("warn here", out2)
+    @test occursin("@ runtests.jl", out2)  # basename present
+
+    # 3) closed-stream fallback to stderr (use Pipe on Windows)
+    plogger3 = PlainLogger(Info)  # uses Base.CoreLogging.closed_stream
+    clogger3 = ComponentLogger(Dict((:__default__,) => Info); sink=plogger3)
+    set_module_logger(@__MODULE__, clogger3)
+    r = Pipe()
+    w = Pipe()
+    redirect_stderr(w)
+    try
+        clog(clogger3, Warn, "fallback to stderr")
+        close(w.in)
+        data = read(w.out, String)
+        @test occursin("fallback to stderr", data)
+    finally
+        redirect_stderr(stdout)  # restore
+        close(r)
+        close(w)
+    end
+end

@@ -1,5 +1,9 @@
 module ComponentLogging
 using Logging
+
+include("PlainLogger.jl")
+export PlainLogger
+
 export ComponentLogger, get_logger, set_module_logger
 export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf
@@ -253,12 +257,12 @@ macro clog(args...)
     msg_tuple = Expr(:tuple, map(esc, msg_ps)...)
 
     return :(
-        let _lg = ComponentLogging.get_logger(@__MODULE__)
-            _lvl = LogLevel($(esc(lvl_ex)))
-            _grp = $grp_ast
-            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
-                Logging.handle_message(_lg, _lvl, $msg_tuple, @__MODULE__, _grp, nothing,
-                    @__FILE__, @__LINE__)
+        let (_mod, _file, _line) = Base.CoreLogging.@_sourceinfo()
+            local _lg = ComponentLogging.get_logger(_mod)
+            local _lvl = LogLevel($(esc(lvl_ex)))
+            local _grp = $grp_ast
+            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, _mod, _grp, nothing)
+                Logging.handle_message(_lg, _lvl, $msg_tuple, _mod, _grp, nothing, _file, _line)
             end
             nothing
         end
@@ -291,10 +295,11 @@ macro clogf(args...)
     end
 
     return :(
-        let _lg = ComponentLogging.get_logger(@__MODULE__)
-            _lvl = LogLevel($(esc(lvl_ex)))
-            _grp = $grp_ast
-            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
+        let (_mod, _file, _line) = Base.CoreLogging.@_sourceinfo()
+            local _lg = ComponentLogging.get_logger(_mod)
+            local _lvl = LogLevel($(esc(lvl_ex)))
+            local _grp = $grp_ast
+            if _lvl >= Logging.min_enabled_level(_lg) && Logging.shouldlog(_lg, _lvl, _mod, _grp, nothing)
                 # evaluate lazily and normalize to tuple
                 _msg = $(esc(body_ex))
                 if _msg isa Function
@@ -302,7 +307,7 @@ macro clogf(args...)
                 end
                 if _msg !== nothing
                     Logging.handle_message(_lg, _lvl, ComponentLogging.msg_to_tuple(_msg),
-                        @__MODULE__, _grp, nothing, @__FILE__, @__LINE__)
+                        _mod, _grp, nothing, _file, _line)
                 end
             end
             nothing
