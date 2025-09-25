@@ -1,0 +1,22 @@
+name: Docs
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: julia-actions/setup-julia@v2
+        with:
+          version: '1.10'
+      - name: Instantiate docs env
+        run: julia --project=docs -e 'using Pkg; Pkg.instantiate()'
+      - name: Build docs
+        run: julia --project=docs docs/make.jl
