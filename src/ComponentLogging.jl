@@ -224,11 +224,6 @@ macro bind_logger(args...)
 end
 
 ## macro                                                                                            
-"""
-@clog level msg...             # default group
-@clog (:a,:b) level msg...     # specified group (literal)
-@clog :core level msg...       # single group (literal)
-"""
 macro clog(args...)
     n = length(args)
     n >= 2 || error("@clog: need (level, msgs...) or (group, level, msgs...)")

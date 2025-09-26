@@ -10,8 +10,6 @@ ComponentLogging provides hierarchical control over log levels and messages. It 
 
 [Changelog](./CHANGELOG.md).
 
----
-
 ## Introduction
 
 Hierarchical logging is critical for building reliable software, especially in compute‑intensive systems. Many computational functions need to emit messages at different detail levels, and there can be lots of such functions. This calls for fine‑grained, per‑function control over logging.
@@ -27,15 +25,11 @@ Julia’s `CoreLogging` module provides a solid foundation, and this package bui
 - Suited for controlling module‑wide output granularity using one (or a few) loggers.
 - Enables control‑flow changes based on hierarchical log levels to eliminate unnecessary computations from hot paths.
 
----
-
 ## Installation
 
 ```julia
 julia>] add ComponentLogging
 ```
-
----
 
 ## Quick Start
 
@@ -64,18 +58,26 @@ ComponentLogger
   └─ :net            Debug
 ```
 
+This package is fully type‑stable. We do not use a global logger or `global_logger()`. All loggers are managed explicitly.
+Concretely, the first argument to `clog`, `clogenabled`, and `clogf` is an `AbstractLogger`. This explicit passing lets us push performance to the limit.
+
+To regain ergonomics, we recommend creating small forwarding helpers right after constructing your `ComponentLogger`, so you can pass the logger implicitly.
+
 Convenience forwarding helpers (short paths)
 
 ```julia
-set_log_level(group, level) = ComponentLogging.set_log_level!(clogger, group, level)
-with_min_level(f, level)    = ComponentLogging.with_min_level(f, clogger, level)
 clog(group, level, message...; file=nothing, line=nothing, kwargs...) =
     ComponentLogging.clog(clogger, group, level, message...; file, line, kwargs...)
-clogenabled(group, level)   = ComponentLogging.clogenabled(clogger, group, level)
+clogenabled(group, level) = ComponentLogging.clogenabled(clogger, group, level)
 clogf(f::F, group, level) where {F<:Function} = ComponentLogging.clogf(f, clogger, group, level)
+
+set_log_level(group, level) = ComponentLogging.set_log_level!(clogger, group, level)
+with_min_level(f, level)    = ComponentLogging.with_min_level(f, clogger, level)
 ```
 
-### `clog` usage
+---
+
+Assuming you set up the forwarding helpers, you can use `clog` like this:
 
 `clog(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel}, message...)`
 
@@ -90,7 +92,7 @@ end
 
 Here `level` can be an `Integer` or a `LogLevel`. When it is an integer, it is interpreted as `LogLevel(Integer)`. The common mapping is 0 => Info, −1000 => Debug, 1000 => Warn, 2000 => Error.
 
-### `clogenabled` usage
+---
 
 `clogenabled(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
 
@@ -115,7 +117,7 @@ end
 
 By guarding with `clogenabled`, intermediate computations are performed only when logs will be emitted, maximizing performance.
 
-### `clogf` usage
+---
 
 `clogf(f::Function, group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
 
@@ -138,7 +140,7 @@ function compute_sumsq()
 end
 ```
 
-### `with_min_level` usage
+---
 
 `with_min_level(f::Function, logger::ComponentLogger, level::Union{Integer,LogLevel})`
 
@@ -154,7 +156,7 @@ end
 
 The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://abcdvvvv.github.io/ComponentLogging.jl/dev/).
 
-## `PlainLogger`
+## PlainLogger
 
 `PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`‑style prefixes. Its output looks like `print`/`println`. It writes messages directly to the console, without additional formatting or filtering beyond color.
 

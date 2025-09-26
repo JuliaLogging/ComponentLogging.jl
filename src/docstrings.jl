@@ -87,7 +87,6 @@ Returns the constructed `ComponentLogger`.
 
 """
     clog(logger, [group], level, msg...)
-    clog([group], level, msg...)
 
 Emit a log message through the given or implicit logger. `group` is a `Symbol`
 or `NTuple{N,Symbol}`. If omitted, the default group `(DEFAULT_SYM,)` is used.
@@ -96,26 +95,42 @@ are passed through as-is.
 
 Keyword arguments `file`, `line`, and arbitrary `kwargs...` are forwarded to the
 underlying logger sink.
+
+It is recommended to create a forwarding function to implicitly pass the logger:
+
+```julia
+clog(group, level, msg...) = clog(logger, group, level, msg...)
+```
 """
 clog
 
 """
     clogenabled(logger, [group], level) -> Bool
-    clogenabled([group], level) -> Bool
 
 Return whether logging is enabled for the given `group` and `level` using the
 given or implicit module-bound logger.
+
+It is recommended to create a forwarding function to implicitly pass the logger:
+
+```julia
+clogenabled(group, level) = clogenabled(logger, group, level)
+```
 """
 clogenabled
 
 """
-    clogf(f, logger, [group], level)
-    clogf(f, [group], level)
+    clogf(f::Function, logger, [group], level)
 
 Like `clog`, but accepts a zero-argument function `f` that is only invoked if
 logging is enabled for the specified `group` and `level`. If `f()` returns
 `nothing`, no message is emitted. Non-tuple returns are converted to a tuple
 internally.
+
+It is recommended to create a forwarding function to implicitly pass the logger:
+
+```julia
+clogf(f, group, level) = clogf(f, logger, group, level)
+```
 """
 clogf
 
@@ -125,6 +140,13 @@ clogf
 Macro version of `clog` that captures the caller's `Module`, `file`, and `line`
 for accurate provenance. `group` must be a literal `Symbol` or tuple of literal
 symbols.
+
+Example:
+```julia
+@clog 0 "hello"             # default group
+@clog :core 1000 "hello"    # single group (literal)
+@clog (:a,:b) 2000 "hello"  # specified group (literal)
+```
 """
 :(@clog)
 
