@@ -21,7 +21,7 @@ Julia’s `CoreLogging` module provides a solid foundation, and this package bui
 `ComponentLogger` only routes and filters messages. It does not own IO streams. You provide an `AbstractLogger` sink such as `ConsoleLogger` or the included `PlainLogger`. The sink determines where and how messages are written.
 
 ### Features
-- High performance; negligible overhead when logging is disabled.
+- High performance; negligible overhead when logging is disabled. See [Benchmarking](@ref).
 - Suited for controlling module‑wide output granularity using one (or a few) loggers.
 - Enables control‑flow changes based on hierarchical log levels to eliminate unnecessary computations from hot paths.
 
@@ -38,14 +38,15 @@ The following is a general pattern you can copy and adapt.
 ```julia
 using ComponentLogging
 
-sink = PlainLogger()
 rules = Dict(
-    :core => Info, 
-    :io   => Warn, 
-    :net  => Debug
+    :core => 0, 
+    :io   => 1000, 
+    :net  => 2000
 )
+sink = PlainLogger()
 clogger = ComponentLogger(rules; sink)
 ```
+
 Output:
 ```julia
 ComponentLogger
@@ -82,12 +83,21 @@ Assuming you set up the forwarding helpers, you can use `clog` like this:
 `clog(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel}, message...)`
 
 ```julia
-function foo(a)
-    a > 0 || clog(:core, 1000, "a should be positive")
-    a += 1
-    clog(:core, 0, "a is now $a")
-    return a
+function compute_vector_sum(n)
+    clog(:core, 2, "Processing a $n-element vector")
+    v = randn(n)
+    s = sum(v)
+    clog(:core, 0, "Done."; s, v)
+    return s
 end
+compute_vector_sum(3);
+```
+Output:
+```julia
+Processing a 3-element vector
+Done.
+ s = 2.435219412665466
+ v = [-0.20970686116839346, 1.2387800065077361, 1.4061462673261231]
 ```
 
 Here `level` can be an `Integer` or a `LogLevel`. When it is an integer, it is interpreted as `LogLevel(Integer)`. The common mapping is 0 => Info, −1000 => Debug, 1000 => Warn, 2000 => Error.
@@ -96,7 +106,7 @@ Here `level` can be an `Integer` or a `LogLevel`. When it is an integer, it is i
 
 `clogenabled(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
 
-`clogenabled` checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
+checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
 
 ```julia
 function compute_sumsq()
@@ -121,7 +131,7 @@ By guarding with `clogenabled`, intermediate computations are performed only whe
 
 `clogf(f::Function, group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
 
-`clogf` is similar to `clogenabled`: when logging is enabled, it executes the `do`‑block as a zero‑argument function and logs its return value. When disabled, the block is skipped entirely.
+similar to `clogenabled`: when logging is enabled, it executes the `do`‑block as a zero‑argument function and logs its return value. When disabled, the block is skipped entirely.
 
 ```julia
 function compute_sumsq()
@@ -144,7 +154,7 @@ end
 
 `with_min_level(f::Function, logger::ComponentLogger, level::Union{Integer,LogLevel})`
 
-`with_min_level` temporarily sets the logger’s global minimum level and restores it on exit.
+temporarily sets the logger’s global minimum level and restores it on exit.
 
 For example, to benchmark `compute_sumsq()` without any logging‑related work:
 
@@ -175,8 +185,83 @@ end
 Output:
 ```julia
 Hello, Julia!
-@ README.md:165
+@ README.md:183
 ```
 
-## Comparison with Similar Packages
+`PlainLogger` uses `show` with `MIME"text/plain"` to display 2D and 3D matrices, as it improves matrix readability. For other types, it prints them directly using `print` or `printstyled`.
 
+```julia
+with_logger(logger) do
+    @warn rand(1:9, 3, 3)
+end
+```
+Output:
+```julia
+3×3 Matrix{Int64}:
+ 8  5  6
+ 3  4  9
+ 7  8  5
+@ README.md:196
+```
+
+## Similar Packages
+
+[**Memento.jl**][1] is a *flexible, hierarchical* logging framework that brings its own ecosystem of loggers, handlers, formatters, records, and IO backends. Loggers are named (e.g., `"Foo.bar"`), form a hierarchy with propagation to a root logger, and are configured via `config!`, `setlevel!`, and by attaching handlers (file, custom formatters, etc.).
+
+[**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers to *hierarchically-related objects* (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree. 
+
+[**ComponentLogging.jl**][3] is a thin, high‑performance layer over the stdlib `Base.CoreLogging` interface. It focuses on:
+
+- **Performance first:** fully type‑stable, no global logger, explicit logger argument for optimal inlining; when disabled, checks are branch‑predictable and near zero‑overhead; when enabled, messages can be built lazily via `clogf`/`clogenabled` so expensive work is skipped unless needed.
+- **Simple composition:** routes to any `AbstractLogger` sink (`ConsoleLogger`, custom sinks, or `LoggingExtras` combinators) and defers formatting/IO to the sink.
+- **Explicit component routing:** hierarchical group keys (`NTuple{N,Symbol}`) give precise control over noisy areas without imposing a separate handler/formatter stack.
+
+> - Choose **Memento.jl** if you want a *self-contained* logging framework with built-in handlers/formatters and hierarchical named loggers.
+> - Choose **HierarchicalLogging.jl** if you want *stdlib-compatible* hierarchical control keyed to modules/keys with recursive level management.
+> - Choose **ComponentLogging.jl** if you want a *high‑performance*, type‑stable, component (group) router atop stdlib `Base.CoreLogging`, with lazy message evaluation and minimal overhead when disabled; formatting/IO remains in the sink (`ConsoleLogger`, custom sinks, `LoggingExtras`, etc.).
+
+### Benchmarking
+
+We benchmark two paths under identical thresholds:
+1) filtered (`min=Error`, log at `Info`) — hot path in production;
+2) enabled (`min=Info`, log at `Info`).
+
+All three systems log the same short string to a null sink (no I/O). Keys test four depths: `default`, `:opti`, `(:a,:b)`, `(:a,…,:h)`.
+
+In these benchmarks, ComponentLogging (CL) checks group-level thresholds and, if allowed, calls the sink’s `handle_message` directly, bypassing the stdlib `@info` macro path. HierarchicalLogging (HL) is exercised via the stdlib macros (macro expansion + metadata before reaching the logger). Memento is exercised via its own API and internal handler pipeline. With all three routed to a null/devnull sink, the results mainly measure macro/dispatch/routing overhead, not I/O. The test script is in "benchmark/bench_CL_HL_Me.jl".
+
+| system | path | key | time (ns) | allocs | memory (B) |
+|:--|:--|:--|--:|--:|--:|
+| CL | enabled | default/str | 9 | 0 | 0 |
+| CL | enabled | opti/str | 9 | 0 | 0 |
+| CL | enabled | tuple2/str | 15 | 0 | 0 |
+| CL | enabled | tuple8/str | 144 | 0 | 0 |
+| CL | filtered | default | 2 | 0 | 0 |
+| CL | filtered | opti | 2 | 0 | 0 |
+| CL | filtered | tuple2 | 2 | 0 | 0 |
+| CL | filtered | tuple8 | 2 | 0 | 0 |
+| HL | enabled | default/str | 2189 | 47 | 1984 |
+| HL | enabled | opti/str | 2178 | 47 | 1984 |
+| HL | enabled | tuple2/str | 2478 | 51 | 2176 |
+| HL | enabled | tuple8/str | 4857 | 77 | 5728 |
+| HL | filtered | default | 2178 | 47 | 1984 |
+| HL | filtered | opti | 2178 | 47 | 1984 |
+| HL | filtered | tuple2 | 2467 | 51 | 2176 |
+| HL | filtered | tuple8 | 4814 | 77 | 5728 |
+| Memento | enabled | a.b..8/str | 2656 | 76 | 4096 |
+| Memento | enabled | a.b/str | 1050 | 31 | 1408 |
+| Memento | enabled | opti/str | 770 | 24 | 1072 |
+| Memento | enabled | root/str | 622 | 22 | 800 |
+| Memento | filtered | a.b | 1040 | 31 | 1408 |
+| Memento | filtered | a.b..8 | 2700 | 76 | 4096 |
+| Memento | filtered | opti | 770 | 24 | 1072 |
+| Memento | filtered | root | 621 | 22 | 800 |
+
+<p><small>
+Note: Julia v1.10.10, BenchmarkTools v1.6.0, ComponentLogging v0.1.0,
+HierarchicalLogging v1.0.2, Memento v1.4.1; Windows x86_64, JULIA_NUM_THREADS=1, -O2.
+</small></p>
+
+[1]: https://invenia.github.io/Memento.jl/latest/ "Home · Memento.jl"
+[2]: https://github.com/curtd/HierarchicalLogging.jl "GitHub - curtd/HierarchicalLogging.jl: Loggers, loggers everywhere"
+[3]: https://github.com/abcdvvvv/ComponentLogging.jl "GitHub - abcdvvvv/ComponentLogging.jl: ComponentLogging.jl"
