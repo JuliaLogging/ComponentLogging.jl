@@ -59,6 +59,63 @@ ComponentLogger
   └─ :net            Debug
 ```
 
+We have a very visually appealing tree-style output. The following example shows a complex rule table:
+
+```julia
+rules2 = Dict(
+    (:net,)                 => 1000,
+    (:net, :http)           => 2000,
+    (:net, :http, :client)  => 2000,
+    (:net, :tcp)            => 0,
+
+    (:db,)                  => 1000,
+    (:db, :read)            => 0,
+    (:db, :read, :replica)  => -1000,
+    (:db, :write)           => 2000,
+
+    (:services, :auth, :jwt)        => 1000,
+    (:services, :billing, :invoice) => 2000,
+
+    (:ui,)                  => 1,
+    (:ui, :dashboard)       => 2,
+    (:ui, :metrics)         => -1000,
+    (:ui, :metrics, :fps)   => -1000,
+
+    (:metrics, :prometheus) => 1000,
+    (:metrics, :tracing)    => 0
+)
+clogger = ComponentLogger(rules2; sink)
+```
+
+Output:
+```julia
+ComponentLogger
+ sink:  PlainLogger
+ min:   Debug
+ rules: 17
+  ├─ :__default__      Info
+  ├─ :db               Warn
+  │  ├─ :read          Info
+  │  │  └─ :replica    Debug
+  │  └─ :write         Error
+  ├─ :metrics
+  │  ├─ :prometheus    Warn
+  │  └─ :tracing       Info
+  ├─ :net              Warn
+  │  ├─ :http          Error
+  │  │  └─ :client     Error
+  │  └─ :tcp           Info
+  ├─ :services
+  │  ├─ :auth
+  │  │  └─ :jwt        Warn
+  │  └─ :billing
+  │     └─ :invoice    Error
+  └─ :ui               LogLevel(1)
+     ├─ :dashboard     LogLevel(2)
+     └─ :metrics       Debug
+        └─ :fps        Debug
+```
+
 This package is fully type‑stable. We do not use a global logger or `global_logger()`. All loggers are managed explicitly.
 Concretely, the first argument to `clog`, `clogenabled`, and `clogf` is an `AbstractLogger`. This explicit passing lets us push performance to the limit.
 
