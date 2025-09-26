@@ -4,7 +4,7 @@ using Logging
 include("PlainLogger.jl")
 export PlainLogger
 
-export ComponentLogger, get_logger, set_module_logger
+export ComponentLogger, get_logger, set_module_logger, set_log_level!, with_min_level
 export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf
 
@@ -463,5 +463,7 @@ function Base.show(io::IO, ::MIME"text/plain", logger::ComponentLogger)
     println(io, " rules:\t", length(logger.rules))
     _print_tree(io, logger.rules)
 end
+
+include("docstrings.jl")
 
 end # module

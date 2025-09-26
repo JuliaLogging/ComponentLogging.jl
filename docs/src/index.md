@@ -7,8 +7,6 @@ CurrentModule = ComponentLogging
 Documentation for [ComponentLogging](https://github.com/abcdvvvv/ComponentLogging.jl).
 
 ```@index
-```
-
-```@autodocs
 Modules = [ComponentLogging]
+Order   = [:type, :function, :macro]
 ```

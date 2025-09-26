@@ -1,17 +1,18 @@
 struct PlainLogger <: AbstractLogger
-    io::IO
+    stream::IO
     lock::ReentrantLock
-    minlevel::LogLevel
+    min_level::LogLevel
 end
 
-PlainLogger(io::IO, minlevel::LogLevel=Info) = PlainLogger(io, ReentrantLock(), minlevel)
-PlainLogger(minlevel::LogLevel=Info) = PlainLogger(Base.CoreLogging.closed_stream, ReentrantLock(), minlevel)
+PlainLogger(stream::IO, min_level::LogLevel=Info) = PlainLogger(stream, ReentrantLock(), min_level)
+PlainLogger(min_level::LogLevel=Info) = PlainLogger(Base.CoreLogging.closed_stream,
+    ReentrantLock(), min_level)
 
-Logging.min_enabled_level(l::PlainLogger) = l.minlevel
-Logging.shouldlog(l::PlainLogger, level, _module, group, id) = level >= l.minlevel
+Logging.min_enabled_level(logger::PlainLogger) = logger.min_level
+Logging.shouldlog(logger::PlainLogger, level, _module, group, id) = level >= logger.min_level
 
 function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...)
-    stream::IO = l.io
+    stream::IO = l.stream
     if !(isopen(stream)::Bool)
         stream = stderr
     end
