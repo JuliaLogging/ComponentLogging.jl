@@ -319,6 +319,14 @@ Note: Julia v1.10.10, BenchmarkTools v1.6.0, ComponentLogging v0.1.0,
 HierarchicalLogging v1.0.2, Memento v1.4.1; Windows x86_64, JULIA_NUM_THREADS=1, -O2.
 </small></p>
 
+## Logger scoping semantics compared with Julia’s stdlib Logging
+
+**Stdlib Logging (task-local)** treats loggers as task-local: messages emitted via `@info`/`@warn`/... go to the current task’s logger (set with `with_logger`/`global_logger`). New tasks inherit the parent’s logger upon creation, so concurrent tasks can run with different loggers, levels, and sinks simultaneously.
+
+**ComponentLogging (module/group-routed)**, by design, exposes a module/group-routed policy: the same module or group (e.g., `:core` or `(:db, :read)`) is routed through the same rules and sink by default—ideal for component-wide noise control and predictable behavior across tasks.
+
+**Scope of intent:** `ComponentLogging` is not aimed at per-task logger isolation by default. Its primary goal is stable, component-level policies with very low overhead on filtered paths.
+
 [1]: https://invenia.github.io/Memento.jl/latest/ "Home · Memento.jl"
 [2]: https://github.com/curtd/HierarchicalLogging.jl "GitHub - curtd/HierarchicalLogging.jl: Loggers, loggers everywhere"
 [3]: https://github.com/abcdvvvv/ComponentLogging.jl "GitHub - abcdvvvv/ComponentLogging.jl: ComponentLogging.jl"
