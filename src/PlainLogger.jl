@@ -45,7 +45,7 @@ function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _modul
 
     if file !== nothing
         println(iob)
-        printstyled(iob, "@ ", Base.basename(String(file)); color)
+        printstyled(iob, "@ $_module ", Base.basename(String(file)); color)
         if line !== nothing
             printstyled(iob, ":", line; color)
         end
