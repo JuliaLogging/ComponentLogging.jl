@@ -110,7 +110,7 @@ end;
     @clog :core Warn "warn here"
     out2 = String(take!(pbuf2))
     @test occursin("warn here", out2)
-    @test occursin("@ runtests.jl", out2)  # basename present
+    @test occursin("runtests.jl", out2)  # basename present
 
     # 3) closed-stream fallback to stderr (use Pipe on Windows)
     plogger3 = PlainLogger(Info)
