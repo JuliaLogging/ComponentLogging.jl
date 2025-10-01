@@ -132,18 +132,18 @@ end
 end
 
 ## clog 
-function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; file=nothing, line=nothing, kwargs...)::Nothing
+function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
     if _enabled(logger, lvl, grp)
-        Logging.handle_message(logger, lvl, message, @__MODULE__, grp, nothing, file, line; kwargs...)
+        Logging.handle_message(logger, lvl, message, _module, grp, nothing, file, line; kwargs...)
     end
     nothing
 end
 
 clog(logger::AbstractLogger, level::Union{Integer,LogLevel}, message...;
-    file=nothing, line=nothing, kwargs...) =
-    clog(logger, (DEFAULT_SYM,), level, message...; file, line, kwargs...)
+    _module=nothing, file=nothing, line=nothing, kwargs...) =
+    clog(logger, (DEFAULT_SYM,), level, message...; _module, file, line, kwargs...)
 
 ## clogenabled
 function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
@@ -156,20 +156,20 @@ clogenabled(logger::AbstractLogger, level::Union{Integer,LogLevel}) =
     clogenabled(logger, (DEFAULT_SYM,), level)
 
 ## clogf
-@inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Nothing where {F<:Function}
+@inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F<:Function}
     grp = _tokey(group)
     lvl = LogLevel(level)
     if _enabled(logger, lvl, grp)
         msg = f()
         if msg !== nothing
-            Logging.handle_message(logger, lvl, msg_to_tuple(msg), @__MODULE__, grp, nothing, @__FILE__, @__LINE__)
+            Logging.handle_message(logger, lvl, msg_to_tuple(msg), _module, grp, nothing, file, line)
         end
     end
     nothing
 end
 
-@inline clogf(f::F, logger::AbstractLogger, level::Union{Integer,LogLevel}) where {F<:Function} =
-    clogf(f, logger, (DEFAULT_SYM,), level)
+clogf(f::F, logger::AbstractLogger, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing) where {F<:Function} =
+    clogf(f, logger, (DEFAULT_SYM,), level; _module, file, line)
 
 ## Module binding macro                                                                             
 """

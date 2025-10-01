@@ -33,111 +33,101 @@ julia>] add ComponentLogging
 
 ## Quick Start
 
-The following is a general pattern you can copy and adapt.
+### 1) Core APIs
+
+This package exposes three small, *function-first* APIs for logging. You use them everywhere; the router (`ComponentLogger`) and its rules just decide *what* gets through.
+
+```julia
+clog(logger,        group, level, msg...; kwargs...)
+clogenabled(logger, group, level)::Bool
+clogf(f::Function,  logger, group, level)
+```
+
+**Arguments:**
+* `logger::AbstractLogger` — any logger instance.
+Typically you pass a `ComponentLogger` configured with per-group rules and a sink (e.g. `PlainLogger`). Many codebases also define forwarding helpers to avoid threading the logger explicitly (see below).
+* `group::Union{Symbol,NTuple{N,Symbol}}` — a `Symbol` or a tuple of symbols, e.g. `:core` or `(:net, :http)`.
+* `level::Union{Integer,LogLevel}` — prefer integers (no need to import `Logging`). We immediately convert with `LogLevel(level)`.
+  * Mapping (integers first): `-1000 (Debug)`, `0 (Info)`, `1000 (Warn)`, `2000 (Error)`.
+  * General rule:  `n → LogLevel(n)`.
+  * Passing `LogLevel` values (e.g. `Info`) is also supported and equivalent.
+
+> **Why logger-first? Performance & type-stability.** No `global_logger()`: `clog`/`clogenabled`/`clogf` take an `AbstractLogger` as the first parameter, which also keeps behavior predictable under concurrency. (see Benchmarking)
+
+**`clog` — emit a log record for a group at a given level**
+
+```julia
+clog(logger, :core, 0, "starting job"; jobid=42)  # 0 = Info
+clog(logger, :io,   1, "retrying I/O"; attempt=3) # 1 = LogLevel(1)
+```
+
+**`clogenabled` — check if logs at `level` would pass for `group`**
+
+```julia
+if clogenabled(logger, :core, 1000)  # guard expensive work
+    stats = compute_expensive_stats()
+    clog(logger, :core, 1000, "stats ready"; stats)
+end
+```
+
+**`clogf` — evaluate the block only when enabled and log its return value**
+
+```julia
+clogf(logger, :core, 1000) do
+    val = compute_expensive_stats()
+    "result = $val"
+end
+```
+
+### 2) Configure the router and define forwarding helpers
 
 ```julia
 using ComponentLogging
 
+# Keys = groups; Values = minimum enabled level (integer or LogLevel)
 rules = Dict(
-    :core => 0, 
-    :io   => 1000, 
-    :net  => 2000
+    :core         => 0,      # Info+
+    :io           => 1000,   # Warn+
+    (:net, :http) => 2000,   # Error+
+    :__default__  => 0       # fallback for unmatched groups (default to Info)
 )
-sink = PlainLogger()
-clogger = ComponentLogger(rules; sink)
+
+sink   = PlainLogger()                  # any AbstractLogger sink works
+clogger = ComponentLogger(rules; sink)  # router/filter; does not own IO
 ```
 
 Output:
-```julia
+
+```text
 ComponentLogger
- sink:  PlainLogger
- min:   Debug
- rules: 4
-  ├─ :__default__    Info
-  ├─ :core           Info
-  ├─ :io             Warn
-  └─ :net            Debug
+  sink:  PlainLogger
+  min:   -1000
+  rules: 4
+   ├─ :__default__     0
+   ├─ :core            0
+   ├─ :io              1000
+   └─ (:net,:http)     2000
 ```
 
-We have a very visually appealing tree-style output. The following example shows a complex rule table:
+**What the rules mean**
+
+* **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
+* **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
+* Define a catch-all like `:__default__ => 0` to control unmatched groups.
+
+**Forwarding helpers (recommended)** — ergonomic short paths used throughout your codebase
 
 ```julia
-rules2 = Dict(
-    (:net,)                 => 1000,
-    (:net, :http)           => 2000,
-    (:net, :http, :client)  => 2000,
-    (:net, :tcp)            => 0,
-
-    (:db,)                  => 1000,
-    (:db, :read)            => 0,
-    (:db, :read, :replica)  => -1000,
-    (:db, :write)           => 2000,
-
-    (:services, :auth, :jwt)        => 1000,
-    (:services, :billing, :invoice) => 2000,
-
-    (:ui,)                  => 1,
-    (:ui, :dashboard)       => 2,
-    (:ui, :metrics)         => -1000,
-    (:ui, :metrics, :fps)   => -1000,
-
-    (:metrics, :prometheus) => 1000,
-    (:metrics, :tracing)    => 0
-)
-clogger = ComponentLogger(rules2; sink)
+clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)
+clogenabled(args...)     = ComponentLogging.clogenabled(clogger, args...)
+clogf(f, args...)        = ComponentLogging.clogf(f, clogger, args...)
+set_log_level(g, lvl)    = ComponentLogging.set_log_level!(clogger, g, lvl)
+with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 
-Output:
-```julia
-ComponentLogger
- sink:  PlainLogger
- min:   Debug
- rules: 17
-  ├─ :__default__      Info
-  ├─ :db               Warn
-  │  ├─ :read          Info
-  │  │  └─ :replica    Debug
-  │  └─ :write         Error
-  ├─ :metrics
-  │  ├─ :prometheus    Warn
-  │  └─ :tracing       Info
-  ├─ :net              Warn
-  │  ├─ :http          Error
-  │  │  └─ :client     Error
-  │  └─ :tcp           Info
-  ├─ :services
-  │  ├─ :auth
-  │  │  └─ :jwt        Warn
-  │  └─ :billing
-  │     └─ :invoice    Error
-  └─ :ui               LogLevel(1)
-     ├─ :dashboard     LogLevel(2)
-     └─ :metrics       Debug
-        └─ :fps        Debug
-```
-
-This package is fully type‑stable. We do not use a global logger or `global_logger()`. All loggers are managed explicitly.
-Concretely, the first argument to `clog`, `clogenabled`, and `clogf` is an `AbstractLogger`. This explicit passing lets us push performance to the limit.
-
-To regain ergonomics, we recommend creating small forwarding helpers right after constructing your `ComponentLogger`, so you can pass the logger implicitly.
-
-Convenience forwarding helpers (short paths)
-
-```julia
-clog(group, level, message...; file=nothing, line=nothing, kwargs...) =
-    ComponentLogging.clog(clogger, group, level, message...; file, line, kwargs...)
-clogenabled(group, level) = ComponentLogging.clogenabled(clogger, group, level)
-clogf(f::F, group, level) where {F<:Function} = ComponentLogging.clogf(f, clogger, group, level)
-
-set_log_level(group, level) = ComponentLogging.set_log_level!(clogger, group, level)
-with_min_level(f, level)    = ComponentLogging.with_min_level(f, clogger, level)
-```
-
----
+### 3) Minimal usage
 
 Assuming you set up the forwarding helpers, you can use `clog` like this:
-
-`clog(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel}, message...)`
 
 ```julia
 function compute_vector_sum(n)
@@ -157,13 +147,9 @@ Done.
  v = [-0.20970686116839346, 1.2387800065077361, 1.4061462673261231]
 ```
 
-Here `level` can be an `Integer` or a `LogLevel`. When it is an integer, it is interpreted as `LogLevel(Integer)`. The common mapping is 0 => Info, −1000 => Debug, 1000 => Warn, 2000 => Error.
+### 4) Avoid work when logs are off — `clogenabled`
 
----
-
-`clogenabled(group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
-
-checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
+`clogenabled` checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
 
 ```julia
 function compute_sumsq()
@@ -184,11 +170,9 @@ end
 
 By guarding with `clogenabled`, intermediate computations are performed only when logs will be emitted, maximizing performance.
 
----
+### 5) Lazy messages — `clogf`
 
-`clogf(f::Function, group::Union{Symbol,NTuple{N,Symbol}}, level::Union{Integer,LogLevel})`
-
-similar to `clogenabled`: when logging is enabled, it executes the `do`‑block as a zero‑argument function and logs its return value. When disabled, the block is skipped entirely.
+`clogf` is similar to `clogenabled`, except it logs the return value of the `do`-block. When disabled, the block is skipped entirely.
 
 ```julia
 function compute_sumsq()
@@ -207,11 +191,9 @@ function compute_sumsq()
 end
 ```
 
----
+### 6) Temporarily raise/lower the minimum level
 
-`with_min_level(f::Function, logger::ComponentLogger, level::Union{Integer,LogLevel})`
-
-temporarily sets the logger’s global minimum level and restores it on exit.
+`with_min_level` temporarily sets the logger’s global minimum level and restores it on exit.
 
 For example, to benchmark `compute_sumsq()` without any logging‑related work:
 
@@ -221,7 +203,11 @@ with_min_level(2000) do
 end
 ```
 
-The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://abcdvvvv.github.io/ComponentLogging.jl/dev/).
+### Notes
+
+* **Routing vs. formatting**: `ComponentLogger` only routes/filters; the **sink** (`PlainLogger` or any `AbstractLogger`) controls formatting/IO.
+* **Grouping**: groups are `Symbol` or tuples of `Symbol` (supports hierarchical/prefix matching if enabled). Be explicit about your matching policy in docs if you customize it.
+* The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://abcdvvvv.github.io/ComponentLogging.jl/dev/).
 
 ## PlainLogger
 

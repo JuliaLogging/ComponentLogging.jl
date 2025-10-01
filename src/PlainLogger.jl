@@ -43,12 +43,12 @@ function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _modul
         pretty(v)
     end
 
-    if file !== nothing
+    if _module !== nothing || file !== nothing
         println(iob)
-        printstyled(iob, "@ $_module ", Base.basename(String(file)); color)
-        if line !== nothing
-            printstyled(iob, ":", line; color)
-        end
+        printstyled(iob, "@ "; color)
+        _module !== nothing && printstyled(iob, string(_module), " "; color)
+        file !== nothing && printstyled(iob, Base.basename(String(file)), " "; color)
+        line !== nothing && printstyled(iob, ":", line; color)
     end
     println(iob)
 

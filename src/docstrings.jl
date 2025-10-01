@@ -86,7 +86,7 @@ Returns the constructed `ComponentLogger`.
 :(@bind_logger)
 
 """
-    clog(logger, [group], level, msg...)
+    clog(logger, [group], level, msg...; _module, file, line, kwargs...)
 
 Emit a log message through the given or implicit logger. `group` is a `Symbol`
 or `NTuple{N,Symbol}`. If omitted, the default group `(DEFAULT_SYM,)` is used.
@@ -99,7 +99,7 @@ underlying logger sink.
 It is recommended to create a forwarding function to implicitly pass the logger:
 
 ```julia
-clog(group, level, msg...) = clog(logger, group, level, msg...)
+clog(args...; kwargs...) = clog(logger, args...; kwargs...)
 ```
 """
 clog
@@ -119,7 +119,7 @@ clogenabled(group, level) = clogenabled(logger, group, level)
 clogenabled
 
 """
-    clogf(f::Function, logger, [group], level)
+    clogf(f::Function, logger, [group], level; _module, file, line)
 
 Like `clog`, but accepts a zero-argument function `f` that is only invoked if
 logging is enabled for the specified `group` and `level`. If `f()` returns
@@ -129,7 +129,7 @@ internally.
 It is recommended to create a forwarding function to implicitly pass the logger:
 
 ```julia
-clogf(f, group, level) = clogf(f, logger, group, level)
+clogf(f, group, level; kwargs...) = clogf(f, logger, group, level; kwargs...)
 ```
 """
 clogf
