@@ -16,10 +16,6 @@ In application code you will typically define *forwarding helpers* to avoid thre
     ```
 
 ```@docs
-ComponentLogger
-get_logger
-set_log_level!
-with_min_level
 clog
 clogenabled
 clogf

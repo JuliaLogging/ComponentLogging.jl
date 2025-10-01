@@ -15,6 +15,7 @@ makedocs(;
     pages=[
         "Home" => "index.md",
         "API" => [
+            "Common Types" => "common_types.md",
             "Functions" => "functions.md",
             "Macros" => "macros.md",]
     ],

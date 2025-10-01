@@ -26,6 +26,7 @@ end
 
 ```@docs
 set_module_logger
+get_logger
 @bind_logger
 @clog
 @cdebug
