@@ -151,6 +151,34 @@ Example:
 :(@clog)
 
 """
+    @cdebug args...
+
+Shorthand for `@clog Debug args...`. Emits a message at `Debug` level. See `@clog` for argument rules and caller metadata capture.
+"""
+:(@cdebug)
+
+"""
+    @cinfo args...
+
+Shorthand for `@clog Info args...`. Emits a message at `Info` level. See `@clog` for argument rules and caller metadata capture.
+"""
+:(@cinfo)
+
+"""
+    @cwarn args...
+
+Shorthand for `@clog Warn args...`. Emits a message at `Warn` level. See `@clog` for argument rules and caller metadata capture.
+"""
+:(@cwarn)
+
+"""
+    @cerror args...
+
+Shorthand for `@clog Error args...`. Emits a message at `Error` level. See `@clog` for argument rules and caller metadata capture.
+"""
+:(@cerror)
+
+"""
     @clogenabled group level
 
 Macro that expands to a boolean expression answering whether logging is enabled
