@@ -33,7 +33,7 @@ julia>] add ComponentLogging
 
 ## Quick Start
 
-### 1) Core APIs
+### Core APIs
 
 This package exposes three small, *function-first* APIs for logging. You use them everywhere; the router (`ComponentLogger`) and its rules just decide *what* gets through.
 
@@ -52,7 +52,7 @@ Typically you pass a `ComponentLogger` configured with per-group rules and a sin
   * General rule:  `n → LogLevel(n)`.
   * Passing `LogLevel` values (e.g. `Info`) is also supported and equivalent.
 
-> **Why logger-first? Performance & type-stability.** No `global_logger()`: `clog`/`clogenabled`/`clogf` take an `AbstractLogger` as the first parameter, which also keeps behavior predictable under concurrency. (see Benchmarking)
+> **Why logger-first? Performance & type-stability.** No `global_logger()`: `clog`/`clogenabled`/`clogf` take an `AbstractLogger` as the first parameter, which also keeps behavior predictable under concurrency.
 
 **`clog` — emit a log record for a group at a given level**
 
@@ -79,7 +79,7 @@ clogf(logger, :core, 1000) do
 end
 ```
 
-### 2) Configure the router and define forwarding helpers
+### Configure the router and define forwarding helpers
 
 ```julia
 using ComponentLogging
@@ -125,7 +125,7 @@ set_log_level(g, lvl)    = ComponentLogging.set_log_level!(clogger, g, lvl)
 with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 
-### 3) Minimal usage
+### Minimal usage
 
 Assuming you set up the forwarding helpers, you can use `clog` like this:
 
@@ -147,7 +147,7 @@ Done.
  v = [-0.20970686116839346, 1.2387800065077361, 1.4061462673261231]
 ```
 
-### 4) Avoid work when logs are off — `clogenabled`
+### Avoid work when logs are off — `clogenabled`
 
 `clogenabled` checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
 
@@ -170,7 +170,7 @@ end
 
 By guarding with `clogenabled`, intermediate computations are performed only when logs will be emitted, maximizing performance.
 
-### 5) Lazy messages — `clogf`
+### Lazy messages — `clogf`
 
 `clogf` is similar to `clogenabled`, except it logs the return value of the `do`-block. When disabled, the block is skipped entirely.
 
@@ -191,7 +191,7 @@ function compute_sumsq()
 end
 ```
 
-### 6) Temporarily raise/lower the minimum level
+### Temporarily raise/lower the minimum level
 
 `with_min_level` temporarily sets the logger’s global minimum level and restores it on exit.
 
