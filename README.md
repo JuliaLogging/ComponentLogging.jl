@@ -7,8 +7,6 @@
 
 ComponentLogging provides hierarchical control over log levels and messages. It is designed to replace ad‑hoc `print/println` calls and verbose flags inside functions, and to strengthen control flow in Julia programs.
 
-[Changelog](./CHANGELOG.md).
-
 ## Introduction
 
 Hierarchical logging is critical for building reliable software, especially in compute‑intensive systems. Many computational functions need to emit messages at different detail levels, and there can be lots of such functions. This calls for fine‑grained, per‑function control over logging.
