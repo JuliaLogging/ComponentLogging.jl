@@ -9,7 +9,7 @@ makedocs(;
     authors  = "karei <abcdvvvv@gmail.com>",
     sitename = "ComponentLogging.jl",
     format   = Documenter.HTML(;
-        canonical = "https://julialogging.github.io/ComponentLogging.jl/dev/",
+        canonical = "https://julialogging.github.io/ComponentLogging.jl",
         edit_link = "master",
         assets    = String[],
     ),
