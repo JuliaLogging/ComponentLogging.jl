@@ -1,7 +1,7 @@
 @doc """
     ComponentLogging
 
-Component-scoped logging utilities for Julia built on top of `Logging`. This package provides:
+Module-scoped logging utilities for Julia built on top of the stdlib `Logging`. This package provides:
 
 - A `ComponentLogger` with hierarchical rule keys to control log levels per component path, e.g. `(:net, :http)`.
 - Lightweight functions `clog`, `clogenabled`, `clogf` for emitting messages and checking if logging is enabled.
