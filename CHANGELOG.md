@@ -32,5 +32,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Documentation: general improvements and clarifications.
 
+## [0.1.2] - 2025-10-13
+### Changed
+- PlainLogger: reworked rendering for simpler, more predictable output and better performance.
+  - Use `render_plain` helpers: arrays with `N >= 2` are shown with `show(MIME"text/plain")` for readable matrices; scalars and 1-D arrays print directly.
+  - Remove color styling and rely on plain printing for consistent logs across environments.
+  - Normalize metadata footer: prints `@ <Module> <file> :<line>` only when available, always followed by a newline.
+  - Tighten `handle_message` signature to `message::Union{Tuple,AbstractString}`.
+  - Add `@nospecialize kwargs` to avoid excessive specialization and reduce latency.
+
+### Fixed
+- Ensure `handle_message` always returns `nothing` for type stability.
+
 [Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.1...HEAD
+[0.1.2]: https://github.com/<owner>/<repo>/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/<owner>/<repo>/compare/v0.1.0...v0.1.1

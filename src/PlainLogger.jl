@@ -11,7 +11,19 @@ PlainLogger(min_level::LogLevel=Info) = PlainLogger(Base.CoreLogging.closed_stre
 Logging.min_enabled_level(logger::PlainLogger) = logger.min_level
 Logging.shouldlog(logger::PlainLogger, level, _module, group, id) = level >= logger.min_level
 
-function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...)
+function render_plain(iob, x::AbstractArray{T,N}) where {T,N}
+    if N >= 2
+        show(iob, MIME"text/plain"(), x)
+    else
+        print(iob, x)
+    end
+end
+
+render_plain(iob, x) = print(iob, x)
+
+function Logging.handle_message(l::PlainLogger, level::LogLevel, message::Union{Tuple,AbstractString}, _module, group, id, file, line; kwargs...)::Nothing
+    @nospecialize kwargs
+
     stream::IO = l.stream
     if !(isopen(stream)::Bool)
         stream = stderr
@@ -20,35 +32,25 @@ function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _modul
     buf = IOBuffer()
     iob = IOContext(buf, stream)
 
-    color = level >= Error ? :red : level >= Warn ? :yellow : level == Debug ? :green : :normal
-    pretty(x) = begin
-        if x isa AbstractArray{T,2} where {T} || x isa AbstractArray{T,3} where {T}
-            str = sprint(show, MIME"text/plain"(), x)
-            printstyled(iob, str; color)
-        else
-            printstyled(iob, x; color)
-        end
-    end
-
     if message isa Tuple
         for m in message
-            pretty(m)
+            render_plain(iob, m)
         end
     else
-        pretty(message)
+        render_plain(iob, message)
     end
     for (k, v) in kwargs
-        print(iob, "\n ")
-        printstyled(iob, k, " = "; color)
-        pretty(v)
+        print(iob, "\n ", k, " = ")
+        render_plain(iob, v)
     end
 
     if _module !== nothing || file !== nothing
-        println(iob)
-        printstyled(iob, "@ "; color)
-        _module !== nothing && printstyled(iob, string(_module), " "; color)
-        file !== nothing && printstyled(iob, Base.basename(String(file)), " "; color)
-        line !== nothing && printstyled(iob, ":", line; color)
+        print(iob, "\n@ ")
+        _module !== nothing && print(iob, string(_module), " ")
+        if file !== nothing
+            print(iob, Base.basename(String(file)), " ")
+            line !== nothing && print(iob, ":", line)
+        end
     end
     println(iob)
 
@@ -56,4 +58,5 @@ function Logging.handle_message(l::PlainLogger, level::LogLevel, message, _modul
     lock(l.lock) do
         write(stream, bytes)
     end
+    nothing
 end
