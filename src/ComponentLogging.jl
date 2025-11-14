@@ -20,13 +20,13 @@ msg_to_tuple(x) = (x,)
 
 ## ComponentLogger
 mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
-    const sink::L
     const rules::Dict{RuleKey,LogLevel}
+    const sink::L
     min::LogLevel
 end
 
 function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info); sink=ConsoleLogger(Debug))
-    return ComponentLogger(sink, rules, minimum(values(rules)))
+    return ComponentLogger(rules, sink, minimum(values(rules)))
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
@@ -217,7 +217,7 @@ macro bind_logger(args...)
         else
             _min = LogLevel(_min)
         end
-        local _logger = ComponentLogging.ComponentLogger(_sink, _rules, _min)
+        local _logger = ComponentLogging.ComponentLogger(_rules; _sink)
         ComponentLogging.set_module_logger($(esc(module_ex)), _logger)
         _logger
     end
