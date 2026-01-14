@@ -97,7 +97,7 @@ Logging.shouldlog(g::ComponentLogger, level, _module, group, id) =
 Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...) =
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)
 
-## Module registry                                                                                  
+## Module registry
 const _REGISTRY_LOCK = ReentrantLock()
 const _REGISTRY = IdDict{Module,AbstractLogger}()
 
@@ -125,13 +125,13 @@ function get_logger(mod::Module)
     end
 end
 
-## Generic macro: @clog level message [group]                                                       
+## Generic macro: @clog level message [group]
 @inline function _enabled(logger::AbstractLogger, lvl::LogLevel, grp)
     lvl >= Logging.min_enabled_level(logger) &&
         Logging.shouldlog(logger, lvl, @__MODULE__, grp, nothing)
 end
 
-## clog 
+## clog
 function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
@@ -171,37 +171,21 @@ end
 clogf(f::F, logger::AbstractLogger, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing) where {F<:Function} =
     clogf(f, logger, (DEFAULT_SYM,), level; _module, file, line)
 
-## Module binding macro                                                                             
-"""
-    @bind_logger [rules=...] [io=...] [console_level=...]
-    @bind_logger Dict((:__default__,)=>Info, ...)
-
-Bind a logger for the current module. Arguments can be several `key=value` pairs,
-or a single `Dict` (treated as `rules`).
-"""
+## Module binding macro
 macro bind_logger(args...)
-    sink_ex   = nothing
-    rules_ex  = :(Dict{ComponentLogging.RuleKey,LogLevel}((ComponentLogging.DEFAULT_SYM,) => Logging.Info))
-    min_ex    = :(nothing)
-    module_ex = :(@__MODULE__)
+    sink_ex  = nothing
+    rules_ex = :(Dict{ComponentLogging.RuleKey,LogLevel}((ComponentLogging.DEFAULT_SYM,) => Logging.Info))
+    mod_ex   = :(@__MODULE__)
 
     for a in args
         if a isa Expr && a.head === :(=)
-            key = a.args[1]
-            val = a.args[2]
-            if key === :sink
-                sink_ex = val
-            elseif key === :rules
-                rules_ex = val
-            elseif key === :min
-                min_ex = val
-            elseif key === :module
-                module_ex = val
-            else
-                error("@bind_logger: unsupported keyword $(key). Allowed: sink= / rules= / min= / module=")
-            end
+            key, val = a.args[1], a.args[2]
+            key === :sink  ? sink_ex = val  :
+            key === :rules ? rules_ex = val :
+            key === :mod   ? mod_ex = val   :
+            error("@bind_logger: unsupported keyword $(key). Allowed: sink= / rules= / mod=")
         else
-            error("@bind_logger: only accepts keyword arguments (sink=..., rules=..., min=..., module=...)")
+            error("@bind_logger: only accepts keyword arguments (sink=..., rules=..., mod=...)")
         end
     end
 
@@ -209,21 +193,15 @@ macro bind_logger(args...)
 
     return quote
         # Construct locals at runtime to avoid capturing global objects during precompilation
-        local _sink  = $(esc(sink_ex))
+        local _sink = $(esc(sink_ex))
         local _rules = $(esc(rules_ex))
-        local _min   = $(esc(min_ex))
-        if _min === nothing
-            _min = get(_rules, (ComponentLogging.DEFAULT_SYM,), Logging.Info)
-        else
-            _min = LogLevel(_min)
-        end
-        local _logger = ComponentLogging.ComponentLogger(_rules; _sink)
-        ComponentLogging.set_module_logger($(esc(module_ex)), _logger)
+        local _logger = ComponentLogging.ComponentLogger(_rules; sink=_sink)
+        ComponentLogging.set_module_logger($(esc(mod_ex)), _logger)
         _logger
     end
 end
 
-## macro                                                                                            
+## macro
 macro clog(args...)
     n = length(args)
     n >= 2 || error("@clog: need (level, msgs...) or (group, level, msgs...)")
@@ -339,7 +317,7 @@ macro cwarn(args...);   esc(:(ComponentLogging.@clog Warn  $(args...)))  end
 macro cerror(args...);  esc(:(ComponentLogging.@clog Error $(args...)))  end
 #! format: on
 
-## Pretty show for ComponentLogger                                                                  
+## Pretty show for ComponentLogger
 @inline _lvname(lv::LogLevel) = string(lv)
 
 @inline function _print_level(io::IO, lv::LogLevel)

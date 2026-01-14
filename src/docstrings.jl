@@ -14,8 +14,8 @@ Typical usage:
 using ComponentLogging
 
 rules = Dict(
-    :core => Info, 
-    :io => Warn, 
+    :core => Info,
+    :io => Warn,
     :net => Debug
 )
 clogger = ComponentLogger(rules; sink=PlainLogger())
@@ -75,13 +75,19 @@ Bind `logger` to the module `mod`. Returns a short human-readable string summary
 set_module_logger
 
 """
-    @bind_logger [sink=...] [rules=...] [min=...] [module=...]
+    @bind_logger [sink=...] [rules=...] [mod=...]
 
-Bind a `ComponentLogger` to the given `module` (default: caller's module).
-Arguments must be passed as keywords. `rules` may be a full `Dict` of rule keys.
-If `min` is omitted, it is derived from `rules[(DEFAULT_SYM,)]`.
+Bind a `ComponentLogger` to the given `mod` (default: caller's module).
+Arguments must be passed as keywords. `rules` may be any `AbstractDict`
+mapping groups (`Symbol` or `NTuple{N,Symbol}`) to levels (`LogLevel` or `Integer`).
 
 Returns the constructed `ComponentLogger`.
+
+Example:
+
+```julia
+@bind_logger sink=ConsoleLogger() rules=Dict(:__default__=>Info, :core=>Warn)
+```
 """
 :(@bind_logger)
 

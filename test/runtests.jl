@@ -83,6 +83,22 @@ using Test
         @clog :core Error "macro works"
         @test !isempty(String(take!(buf)))
     end
+
+    @testset "@bind_logger binds module logger" begin
+        old = ComponentLogging.get_logger(@__MODULE__)
+        buf2 = IOBuffer()
+        sink2 = ConsoleLogger(buf2, Debug)
+        rules2 = Dict(:__default__ => Info, :core => Warn)
+
+        lg = @bind_logger sink=sink2 rules=rules2
+        @test lg isa ComponentLogger
+        @test ComponentLogging.get_logger(@__MODULE__) === lg
+
+        @clog :core Warn "bind_logger works"
+        @test occursin("bind_logger works", String(take!(buf2)))
+
+        ComponentLogging.set_module_logger(@__MODULE__, old)
+    end
 end;
 
 @testset "PlainLogger + ComponentLogger" begin
