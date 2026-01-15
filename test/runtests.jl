@@ -147,7 +147,7 @@ end
         end
         @test occursin("allowed", String(take!(ForwardLoggerTest.buf)))
 
-        ForwardLoggerTest.set_log_level!(:core, 0)
+        ForwardLoggerTest.set_log_level(:core, 0)
         @test ForwardLoggerTest.clogenabled(:core, 0) == true
 
         oldmin = ForwardLoggerTest.logger_ref[].min

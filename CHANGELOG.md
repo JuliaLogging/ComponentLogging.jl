@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+- `@forward_logger` now generates a non-bang `set_log_level(...)` forwarding helper (internally calling `set_log_level!`).
+
+### Changed
+- README: reorganize Quick Start to lead with a minimal runnable example; move “Core APIs” later; clarify logger-first motivation.
+- Docs: move `@forward_logger` documentation to the function-first page and clarify macro-first vs function-first usage.
+- Docs: update `@bind_logger` example to use `sink=...` keyword form.
+
+### Removed
+- `@forward_logger` no longer forwards `set_log_level!` by default (use `set_log_level` from the forwarding set).
+
 ## [0.1.4] - 2026-01-15
 ### Added
 - `@forward_logger` to generate module-local forwarding methods for a logger (or `Ref{<:AbstractLogger}`).

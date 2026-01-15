@@ -128,7 +128,7 @@ The macro above is equivalent to defining the following forwarding methods at mo
 clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)
 clogenabled(args...)     = ComponentLogging.clogenabled(clogger, args...)
 clogf(f, args...)        = ComponentLogging.clogf(f, clogger, args...)
-set_log_level!(g, lvl)   = ComponentLogging.set_log_level!(clogger, g, lvl)
+set_log_level(g, lvl)    = ComponentLogging.set_log_level!(clogger, g, lvl)
 with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 
