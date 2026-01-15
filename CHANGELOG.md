@@ -6,13 +6,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.5] - 2026-01-15
 ### Added
 - `@forward_logger` now generates a non-bang `set_log_level(...)` forwarding helper (internally calling `set_log_level!`).
 
 ### Changed
-- README: reorganize Quick Start to lead with a minimal runnable example; move “Core APIs” later; clarify logger-first motivation.
+- Function APIs: `_module` keyword now defaults to `nothing` again (avoids capturing the defining module as a default).
 - Docs: move `@forward_logger` documentation to the function-first page and clarify macro-first vs function-first usage.
 - Docs: update `@bind_logger` example to use `sink=...` keyword form.
+
+### Fixed
+- README: minimal example now runs as written.
 
 ### Removed
 - `@forward_logger` no longer forwards `set_log_level!` by default (use `set_log_level` from the forwarding set).
@@ -61,7 +65,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.4...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.5...HEAD
+[0.1.5]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.1...v0.1.2
