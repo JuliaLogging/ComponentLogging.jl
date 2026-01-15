@@ -27,8 +27,6 @@ julia>] add ComponentLogging
 
 ## Quick Start
 
-### Minimal Working Example
-
 ```julia
 using ComponentLogging
 
