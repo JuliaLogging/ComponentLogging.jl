@@ -4,33 +4,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
+## [0.1.4] - 2026-01-15
 ### Added
-- 
+- `@forward_logger` to generate module-local forwarding methods for a logger (or `Ref{<:AbstractLogger}`).
+- `set_log_level!(logger, group, on::Bool)` convenience switch.
 
 ### Changed
-- 
+- `@clog` now supports the no-group form `@clog level msg...`.
 
 ### Fixed
-- 
-
-### Deprecated
-- 
+- `clog` now forwards `id` to `Logging.handle_message`.
 
 ### Removed
-- 
+- Removed overloads without an explicit `group` (`clog(logger, level, ...)`, `clogenabled(logger, level)`).
 
-### Security
-- 
+## [0.1.3] - 2026-01-14
+### Fixed
+- `@bind_logger`: fix sink keyword handling, remove `min=` handling, and use `mod=` keyword.
 
-## [0.1.0] - 2025-09-25
-### Added
-- Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
-
-## [0.1.1] - 2025-10-07
 ### Changed
-- Documentation: general improvements and clarifications.
+- Documentation: update `@bind_logger` docs and add a usage example.
+- Tests: add `@bind_logger` regression coverage.
+- CI: test against Julia `lts` and `1`.
+- Compat: relax Julia requirement to `julia = "1"`.
 
 ## [0.1.2] - 2025-10-13
 ### Changed
@@ -44,6 +40,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Ensure `handle_message` always returns `nothing` for type stability.
 
-[Unreleased]: https://github.com/<owner>/<repo>/compare/v0.1.1...HEAD
-[0.1.2]: https://github.com/<owner>/<repo>/compare/v0.1.1...v0.1.2
-[0.1.1]: https://github.com/<owner>/<repo>/compare/v0.1.0...v0.1.1
+## [0.1.1] - 2025-10-07
+### Changed
+- Documentation: general improvements and clarifications.
+
+## [0.1.0] - 2025-09-25
+### Added
+- Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
+
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.3...v0.1.4
+[0.1.3]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.2...v0.1.3
+[0.1.2]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.1...v0.1.2
+[0.1.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.0...v0.1.1

@@ -17,7 +17,7 @@ function __init__()
 end
 # or
 function __init__()
-    @bind_logger logger
+    @bind_logger sink=logger
 end
 ```
 

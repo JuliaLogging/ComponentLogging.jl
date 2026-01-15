@@ -21,6 +21,7 @@ Julia’s `CoreLogging` module provides a solid foundation, and this package bui
 - High performance; negligible overhead when logging is disabled. See [Benchmarking](@ref).
 - Suited for controlling module‑wide output granularity using one (or a few) loggers.
 - Enables control‑flow changes based on hierarchical log levels to eliminate unnecessary computations from hot paths.
+- `@forward_logger` macro for ergonomic, module-local forwarding wrappers.
 
 ## Installation
 
@@ -49,7 +50,7 @@ Typically you pass a `ComponentLogger` configured with per-group rules and a sin
   * General rule:  `n → LogLevel(n)`.
   * Passing `LogLevel` values (e.g. `Info`) is also supported and equivalent.
 
-> **Why logger-first? Performance & type-stability.** No `global_logger()`: `clog`/`clogenabled`/`clogf` take an `AbstractLogger` as the first parameter, which also keeps behavior predictable under concurrency.
+> **Why logger-first? Performance & type-stability.** The stdlib logging macros (`@info`, `@logmsg`, …) typically start by looking up the current logger (task-local, with a global fallback). When you already have a logger (e.g. stored in a `const` or a `Ref`), calling `clog(logger, ...)` bypasses that lookup and can reduce overhead in hot paths, while keeping behavior explicit and predictable under concurrency.
 
 **`clog` — emit a log record for a group at a given level**
 
@@ -115,10 +116,16 @@ ComponentLogger
 **Forwarding helpers (recommended)** — ergonomic short paths used throughout your codebase
 
 ```julia
+@forward_logger clogger
+```
+
+The macro above is equivalent to defining the following forwarding methods at module top-level (shown here for clarity):
+
+```julia
 clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)
 clogenabled(args...)     = ComponentLogging.clogenabled(clogger, args...)
 clogf(f, args...)        = ComponentLogging.clogf(f, clogger, args...)
-set_log_level(g, lvl)    = ComponentLogging.set_log_level!(clogger, g, lvl)
+set_log_level!(g, lvl)   = ComponentLogging.set_log_level!(clogger, g, lvl)
 with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 

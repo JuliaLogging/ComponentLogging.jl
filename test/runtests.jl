@@ -2,6 +2,22 @@ using ComponentLogging
 using Logging
 using Test
 
+module ForwardLoggerTest
+using ComponentLogging
+using Logging
+const buf = IOBuffer()
+const logger_ref = Ref(ComponentLogger(Dict(:__default__ => Info, :core => Warn); sink=ConsoleLogger(buf, Debug)))
+@forward_logger logger_ref
+end
+
+module ForwardLoggerTest2
+using ComponentLogging
+using Logging
+const buf = IOBuffer()
+const logger_ref = Ref(ComponentLogger(Dict(:__default__ => Info, :core => Info); sink=ConsoleLogger(buf, Debug)))
+@forward_logger logger_ref
+end
+
 @testset "ComponentLogging.jl" begin
     buf = IOBuffer()
     rules = Dict((:core,) => Warn)
@@ -13,10 +29,11 @@ using Test
     clearbuf!() = (take!(buf); nothing)
 
     @testset "enable logic" begin
-        @test clogenabled(logger, Info) == true
-        @test clogenabled(logger, Debug) == false
+        @test clogenabled(logger, :__default__, Info) == true
+        @test clogenabled(logger, :__default__, Debug) == false
         @test clogenabled(logger, :core, Warn) == true
         @test clogenabled(logger, :core, Info) == false
+        @test clogenabled(logger, :core) == false
         @test (@clogenabled :core Warn) == true
         @test (@clogenabled :core Debug) == false
     end
@@ -36,7 +53,7 @@ using Test
 
         clearbuf!()
         # Default group at Info is enabled
-        clog(logger, Info, "info default")
+        clog(logger, :__default__, Info, "info default")
         @test !isempty(String(take!(buf)))
     end
 
@@ -78,9 +95,24 @@ using Test
         @test Logging.min_enabled_level(logger) === Debug
     end
 
+    @testset "set_log_level! Bool switch" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :sw => Info); sink)
+        @test clogenabled(logger, :sw) == true
+        ComponentLogging.set_log_level!(logger, :sw, false)
+        @test clogenabled(logger, :sw) == false
+        ComponentLogging.set_log_level!(logger, :sw, true)
+        @test clogenabled(logger, :sw) == true
+    end
+
     @testset "@clog macro literal group" begin
         clearbuf!()
         @clog :core Error "macro works"
+        @test !isempty(String(take!(buf)))
+    end
+
+    @testset "@clog macro no group" begin
+        clearbuf!()
+        @clog Info "macro works (no group)"
         @test !isempty(String(take!(buf)))
     end
 
@@ -99,6 +131,34 @@ using Test
 
         ComponentLogging.set_module_logger(@__MODULE__, old)
     end
+
+    @testset "@forward_logger generates forwarding methods" begin
+        take!(ForwardLoggerTest.buf)
+        take!(ForwardLoggerTest2.buf)
+
+        ForwardLoggerTest.clog(:__default__, 0, "hello default")
+        @test occursin("hello default", String(take!(ForwardLoggerTest.buf)))
+
+        ForwardLoggerTest.clog(:core, 0, "blocked")
+        @test isempty(String(take!(ForwardLoggerTest.buf)))
+
+        ForwardLoggerTest.clogf(:core, 2000) do
+            "allowed"
+        end
+        @test occursin("allowed", String(take!(ForwardLoggerTest.buf)))
+
+        ForwardLoggerTest.set_log_level!(:core, 0)
+        @test ForwardLoggerTest.clogenabled(:core, 0) == true
+
+        oldmin = ForwardLoggerTest.logger_ref[].min
+        ForwardLoggerTest.with_min_level(2000) do
+            @test ForwardLoggerTest.logger_ref[].min == LogLevel(2000)
+        end
+        @test ForwardLoggerTest.logger_ref[].min == oldmin
+
+        ForwardLoggerTest2.clog(:core, 0, "independent")
+        @test occursin("independent", String(take!(ForwardLoggerTest2.buf)))
+    end
 end;
 
 @testset "PlainLogger + ComponentLogger" begin
@@ -109,11 +169,11 @@ end;
     set_module_logger(@__MODULE__, clogger)
 
     # ensure info is emitted to pbuf
-    clog(clogger, Info, "plain info")
+    clog(clogger, :__default__, Info, "plain info")
     @test !isempty(String(take!(pbuf)))
 
     # kwargs appear
-    clog(clogger, Info, "with kw"; a=1, b="x")
+    clog(clogger, :__default__, Info, "with kw"; a=1, b="x")
     out = String(take!(pbuf))
     @test occursin("a = 1", out)
     @test occursin("b = x", out)
@@ -136,7 +196,7 @@ end;
     w = Pipe()
     redirect_stderr(w)
     try
-        clog(clogger3, Warn, "fallback to stderr")
+        clog(clogger3, :__default__, Warn, "fallback to stderr")
         flush(stderr)
     finally
         redirect_stderr(stdout)

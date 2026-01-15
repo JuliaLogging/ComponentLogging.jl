@@ -6,6 +6,7 @@ Module-scoped logging utilities for Julia built on top of the stdlib `Logging`. 
 - A `ComponentLogger` with hierarchical rule keys to control log levels per component path, e.g. `(:net, :http)`.
 - Lightweight functions `clog`, `clogenabled`, `clogf` for emitting messages and checking if logging is enabled.
 - Macros `@clog`, `@clogf`, `@clogenabled` that capture the caller module/source location for accurate provenance.
+- Macro `@forward_logger` to generate module-local forwarding methods.
 - A simple `PlainLogger` sink for pretty, colored output without timestamps/prefixes.
 
 Typical usage:
@@ -46,6 +47,8 @@ ComponentLogger
 
 Set or update the minimum level for a specific component `group` on `logger`.
 `group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel` or `Integer`.
+If `lvl` is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and
+`false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
 Updates the internal `min` cache appropriately.
 """
 set_log_level!
@@ -112,6 +115,7 @@ clog
 
 """
     clogenabled(logger, [group], level) -> Bool
+    clogenabled(logger, group) -> Bool
 
 Return whether logging is enabled for the given `group` and `level` using the
 given or implicit module-bound logger.
@@ -203,6 +207,38 @@ is only evaluated if logging is enabled. Caller module and source location are
 captured automatically.
 """
 :(@clogf)
+
+"""
+    @forward_logger logger
+
+Define forwarding methods in the current module so you can call `clog`, `clogf`,
+`clogenabled`, `set_log_level!`, and `with_min_level` without explicitly passing a
+logger each time.
+
+`logger` may be either an `AbstractLogger` or a `Base.RefValue{<:AbstractLogger}`.
+
+Example:
+
+```julia
+using ComponentLogging
+
+const pkg_logger = Ref(ComponentLogger(...))
+@forward_logger pkg_logger
+
+clog(:core, 0, "hello")
+clogf(:core, 0) do
+    ("expensive ", 1 + 2)
+end
+set_log_level!(:core, 1000)
+with_min_level(2000) do
+    # Temporarily raise the global minimum level (fast early rejection).
+    clog(:core, 0, "suppressed by global min")
+end
+```
+
+Note: Use this macro at module top-level.
+"""
+:(@forward_logger)
 
 """
     PlainLogger(stream::IO, min_level::LogLevel=Info)
