@@ -9,13 +9,9 @@ ComponentLogging provides hierarchical control over log levels and messages. It 
 
 ## Introduction
 
-Hierarchical logging is critical for building reliable software, especially in compute‑intensive systems. Many computational functions need to emit messages at different detail levels, and there can be lots of such functions. This calls for fine‑grained, per‑function control over logging.
+ComponentLogging builds on Julia’s stdlib `Logging` to provide a compositional router/logger, `ComponentLogger`, that applies hierarchical minimum levels keyed by `group` (`Symbol` or `NTuple{N,Symbol}`), then delegates to an `AbstractLogger` sink (e.g. `ConsoleLogger` or the included `PlainLogger`).
 
-Another challenge is performance: printing intermediate values can be expensive and slow down hot paths. Ideally, those intermediates should be computed and printed only when logging is actually enabled. This requires the ability to alter control flow based on logging decisions.
-
-Julia’s `CoreLogging` module provides a solid foundation, and this package builds on it. At its core is the `ComponentLogger`, which uses a `Dict` keyed by `NTuple{N,Symbol}` to control output hierarchically across a module. You can choose the `LogLevel` per feature, type, module, or function name to achieve global control with precision.
-
-`ComponentLogger` only routes and filters messages. It does not own IO streams. You provide an `AbstractLogger` sink such as `ConsoleLogger` or the included `PlainLogger`. The sink determines where and how messages are written.
+For performance-sensitive code paths, the core APIs are logger-first (`clog`, `clogenabled`, `clogf`): when you already have a logger, they bypass task-local logger lookup and make it easy to avoid expensive work when logs are off. Use `@forward_logger` to generate module-local forwarding wrappers.
 
 ### Features
 - High performance; negligible overhead when logging is disabled. See [Benchmarking](@ref).
@@ -30,6 +26,49 @@ julia>] add ComponentLogging
 ```
 
 ## Quick Start
+
+### Minimal Working Example
+
+```julia
+using ComponentLogging
+
+# Keys = groups; Values = minimum enabled level (integer or LogLevel)
+rules = Dict(
+    :core         => 0,      # Info+
+    :io           => 1000,   # Warn+
+    (:net, :http) => 2000,   # Error+
+    :__default__  => 0       # fallback for unmatched groups (default to Info)
+)
+
+sink = PlainLogger()                   # any AbstractLogger sink works
+clogger = ComponentLogger(rules; sink) # router/filter; does not own IO
+
+@forward_logger clogger
+
+clog(:core, 0, "starting job"; jobid=42)  # 0 = Info
+clog(:io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
+```
+
+To inspect the hierarchical rules inside `clogger`, use `display(clogger)`.
+
+Output:
+
+```text
+ComponentLogger
+  sink:  PlainLogger
+  min:   -1000
+  rules: 4
+   ├─ :__default__     0
+   ├─ :core            0
+   ├─ :io              1000
+   └─ (:net,:http)     2000
+```
+
+**What the rules mean**
+
+* **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
+* **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
+* Define a catch-all like `:__default__ => 0` to control unmatched groups.
 
 ### Core APIs
 
@@ -55,65 +94,29 @@ Typically you pass a `ComponentLogger` configured with per-group rules and a sin
 **`clog` — emit a log record for a group at a given level**
 
 ```julia
-clog(logger, :core, 0, "starting job"; jobid=42)  # 0 = Info
-clog(logger, :io,   1, "retrying I/O"; attempt=3) # 1 = LogLevel(1)
+clog(clogger, :core,  0, "starting job"; jobid=42)   # 0 = Info
+clog(clogger, :io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
 ```
 
 **`clogenabled` — check if logs at `level` would pass for `group`**
 
 ```julia
-if clogenabled(logger, :core, 1000)  # guard expensive work
+if clogenabled(clogger, :core, 1000)  # guard expensive work
     stats = compute_expensive_stats()
-    clog(logger, :core, 1000, "stats ready"; stats)
+    clog(clogger, :core, 1000, "stats ready"; stats)
 end
 ```
 
 **`clogf` — evaluate the block only when enabled and log its return value**
 
 ```julia
-clogf(logger, :core, 1000) do
+clogf(clogger, :core, 1000) do
     val = compute_expensive_stats()
     "result = $val"
 end
 ```
 
-### Configure the router and define forwarding helpers
-
-```julia
-using ComponentLogging
-
-# Keys = groups; Values = minimum enabled level (integer or LogLevel)
-rules = Dict(
-    :core         => 0,      # Info+
-    :io           => 1000,   # Warn+
-    (:net, :http) => 2000,   # Error+
-    :__default__  => 0       # fallback for unmatched groups (default to Info)
-)
-
-sink   = PlainLogger()                  # any AbstractLogger sink works
-clogger = ComponentLogger(rules; sink)  # router/filter; does not own IO
-```
-
-Output:
-
-```text
-ComponentLogger
-  sink:  PlainLogger
-  min:   -1000
-  rules: 4
-   ├─ :__default__     0
-   ├─ :core            0
-   ├─ :io              1000
-   └─ (:net,:http)     2000
-```
-
-**What the rules mean**
-
-* **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
-* **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
-* Define a catch-all like `:__default__ => 0` to control unmatched groups.
-
-**Forwarding helpers (recommended)** — ergonomic short paths used throughout your codebase
+**`@forward_logger` — ergonomic short paths used throughout your codebase**
 
 ```julia
 @forward_logger clogger
@@ -129,7 +132,7 @@ set_log_level!(g, lvl)   = ComponentLogging.set_log_level!(clogger, g, lvl)
 with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 
-### Minimal usage
+### More examples
 
 Assuming you set up the forwarding helpers, you can use `clog` like this:
 
