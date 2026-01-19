@@ -6,6 +6,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.6] - 2026-01-19
+### Changed
+- PlainLogger now uses keyword defaults via `@kwdef`.
+
+### Removed
+- `PlainLogger(min_level::LogLevel)` positional constructor; use keyword arguments instead (e.g. `PlainLogger(min_level=Debug)`).
+
 ## [0.1.5] - 2026-01-15
 ### Added
 - `@forward_logger` now generates a non-bang `set_log_level(...)` forwarding helper (internally calling `set_log_level!`).
@@ -65,7 +72,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.5...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.6...HEAD
+[0.1.6]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.2...v0.1.3

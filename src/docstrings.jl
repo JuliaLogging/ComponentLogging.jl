@@ -241,14 +241,13 @@ Note: Use this macro at module top-level.
 :(@forward_logger)
 
 """
-    PlainLogger(stream::IO, min_level::LogLevel=Info)
-    PlainLogger(min_level::LogLevel=Info)
+    PlainLogger(; stream=Base.CoreLogging.closed_stream, min_level=Info)
 
 A simple `AbstractLogger` implementation that prints messages without standard
 prefixes/timestamps, with minimal coloring by level.
 
-- `stream`: target stream; if closed, falls back to `stderr`.
-- `min_level`: minimum enabled level for the sink.
+- `stream::IO`: target stream; if closed, falls back to `stderr`.
+- `min_level::LogLevel`: minimum enabled level for the sink.
 
 Intended for tests, demos, or embedding in custom sinks.
 """

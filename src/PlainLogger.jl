@@ -1,12 +1,8 @@
-struct PlainLogger <: AbstractLogger
-    stream::IO
-    lock::ReentrantLock
-    min_level::LogLevel
+@kwdef struct PlainLogger <: AbstractLogger
+    stream::IO = Base.CoreLogging.closed_stream
+    lock::ReentrantLock = ReentrantLock()
+    min_level::LogLevel = Info
 end
-
-PlainLogger(stream::IO, min_level::LogLevel=Info) = PlainLogger(stream, ReentrantLock(), min_level)
-PlainLogger(min_level::LogLevel=Info) = PlainLogger(Base.CoreLogging.closed_stream,
-    ReentrantLock(), min_level)
 
 Logging.min_enabled_level(logger::PlainLogger) = logger.min_level
 Logging.shouldlog(logger::PlainLogger, level, _module, group, id) = level >= logger.min_level

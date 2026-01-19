@@ -164,7 +164,7 @@ end;
 @testset "PlainLogger + ComponentLogger" begin
     # 1) Basic logging into an IOBuffer via PlainLogger sink
     pbuf = IOBuffer()
-    plogger = PlainLogger(pbuf, Debug)
+    plogger = PlainLogger(stream=pbuf, min_level=Debug)
     clogger = ComponentLogger(sink=plogger)
     set_module_logger(@__MODULE__, clogger)
 
@@ -180,7 +180,7 @@ end;
 
     # 2) Warn and location: using macro to ensure file/line is passed
     pbuf2 = IOBuffer()
-    plogger2 = PlainLogger(pbuf2, Debug)
+    plogger2 = PlainLogger(stream=pbuf2, min_level=Debug)
     clogger2 = ComponentLogger(sink=plogger2)
     set_module_logger(@__MODULE__, clogger2)
     @clog :core Warn "warn here"
@@ -189,7 +189,7 @@ end;
     @test occursin("runtests.jl", out2)  # basename present
 
     # 3) closed-stream fallback to stderr (use Pipe on Windows)
-    plogger3 = PlainLogger(Info)
+    plogger3 = PlainLogger(min_level=Info)
     clogger3 = ComponentLogger(sink=plogger3)
     set_module_logger(@__MODULE__, clogger3)
 
