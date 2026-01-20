@@ -95,51 +95,52 @@ Example:
 :(@bind_logger)
 
 """
-    clog(logger, [group], level, msg...; _module, file, line, kwargs...)
+    clog(logger, group, level, msg...; _module, file, line, kwargs...)
 
 Emit a log message through the given or implicit logger. `group` is a `Symbol`
-or `NTuple{N,Symbol}`. If omitted, the default group `(DEFAULT_SYM,)` is used.
-`level` may be `LogLevel` or `Integer`. `msg` can be one or more values; tuples
-are passed through as-is.
+or `NTuple{N,Symbol}`. `level` may be `LogLevel` or `Integer`. `msg` can be one
+or more values; tuples are passed through as-is.
 
 Keyword arguments `file`, `line`, and arbitrary `kwargs...` are forwarded to the
 underlying logger sink.
 
-It is recommended to create a forwarding function to implicitly pass the logger:
+If `@forward_logger` is already used, the following forwarding signatures are available:
 
 ```julia
-clog(args...; kwargs...) = clog(logger, args...; kwargs...)
+clog(group, level, msg...; kwargs...)
+clog(group, msg...; kwargs...)
 ```
 """
 clog
 
 """
-    clogenabled(logger, [group], level) -> Bool
+    clogenabled(logger, group, level) -> Bool
     clogenabled(logger, group) -> Bool
 
-Return whether logging is enabled for the given `group` and `level` using the
-given or implicit module-bound logger.
+Return whether logging is enabled for the given `logger`, `group`, and `level`.
+If `level` is omitted, `Info` is used.
 
-It is recommended to create a forwarding function to implicitly pass the logger:
+If `@forward_logger` is already used, the following forwarding signatures are available:
 
 ```julia
-clogenabled(group, level) = clogenabled(logger, group, level)
+clogenabled(group, level) -> Bool
+clogenabled(group) -> Bool
 ```
 """
 clogenabled
 
 """
-    clogf(f::Function, logger, [group], level; _module, file, line)
+    clogf(f::Function, logger, group, level; _module, file, line)
 
 Like `clog`, but accepts a zero-argument function `f` that is only invoked if
 logging is enabled for the specified `group` and `level`. If `f()` returns
 `nothing`, no message is emitted. Non-tuple returns are converted to a tuple
 internally.
 
-It is recommended to create a forwarding function to implicitly pass the logger:
+If `@forward_logger` is already used, the following forwarding signatures are available:
 
 ```julia
-clogf(f, group, level; kwargs...) = clogf(f, logger, group, level; kwargs...)
+clogf(f, group, level; _module, file, line)
 ```
 """
 clogf
