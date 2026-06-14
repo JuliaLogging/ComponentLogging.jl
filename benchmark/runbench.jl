@@ -1,0 +1,250 @@
+#=
+[
+  {
+    "branch": "master or feature branch name",
+    "tag": "v0.1.6 or empty",
+    "code_state_id": "full_commit_sha, or full_commit_sha + '+' + hash(staged diff + unstaged diff)",
+    "label": "display label, now it's short commit",
+    "commit": "full sha or empty",
+    "date": "ISO-8601 datetime",
+    "benchmark_key": "enabled/clog/default/text",
+    "metric_kind": "runtime or compile_first_call",
+    "time_ns_median": 29.24,
+    "time_ns_min": 29.22,
+    "memory_bytes_min": 0,
+    "allocs_min": 0,
+    "machine_id": "user-defined or hostname-based stable machine id",
+    "cpu_model": "CPU model string",
+    "cpu_threads": 16,
+    "arch": "x86_64 or aarch64",
+    "os": "linux or macos or windows",
+    "julia_version": "1.12.0",
+    "is_dirty": false,
+    "notes": "optional free-form note"
+  }
+]
+=#
+using Pkg
+Pkg.activate(@__DIR__)
+Pkg.develop(path=joinpath(@__DIR__, ".."))
+Pkg.instantiate()
+
+using BenchmarkTools
+using Dates
+using DBInterface
+using SHA
+using SQLite
+
+include(joinpath(@__DIR__, "benchmarks.jl"))
+
+const RESULTS_DB_PATH = get(ENV, "BENCH_DB_PATH", joinpath(@__DIR__, "results.sqlite"))
+
+iso_utc_now() = Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sss") * "Z"
+
+function detect_branch()
+    get(ENV, "GITHUB_REF_TYPE", "") == "branch" && return get(ENV, "GITHUB_REF_NAME", "")
+    branch = readchomp(`git branch --show-current`)
+    return isempty(branch) ? "master" : branch
+end
+
+function detect_tag()
+    get(ENV, "GITHUB_REF_TYPE", "") == "tag" && return get(ENV, "GITHUB_REF_NAME", "")
+    tags = readchomp(`git tag --points-at HEAD`)
+    return isempty(tags) ? tags : split(tags, '\n'; keepempty=false) |> first
+end
+
+function detect_commit()
+    commit = get(ENV, "GITHUB_SHA", "")
+    isempty(commit) ? readchomp(`git rev-parse HEAD`) : commit
+end
+
+function detect_dirty_state()
+    staged_dirty = !success(pipeline(`git diff --cached --quiet`, stdout=devnull, stderr=devnull))
+    unstaged_dirty = !success(pipeline(`git diff --quiet`, stdout=devnull, stderr=devnull))
+
+    if !(staged_dirty || unstaged_dirty)
+        return (is_dirty=false, diff_hash="")
+    else
+        staged_diff = staged_dirty ? read(pipeline(ignorestatus(`git diff --cached --binary`), stderr=devnull)) : UInt8[]
+        unstaged_diff = unstaged_dirty ? read(pipeline(ignorestatus(`git diff --binary`), stderr=devnull)) : UInt8[]
+        diff_hash = bytes2hex(sha1(vcat(staged_diff, UInt8[0x0a], unstaged_diff)))
+        return (is_dirty=true, diff_hash=diff_hash)
+    end
+end
+
+function detect_machine_id()
+    readchomp(`hostname`)
+end
+
+function detect_cpu_model()
+    buf = IOBuffer()
+    Sys.cpu_summary(buf)
+    CPU = rstrip(first(split(String(take!(buf)), '\n'; keepempty=false)), [':', ' '])
+end
+
+function detect_code_state_id(commit::AbstractString, diff_hash::AbstractString)
+    base = isempty(commit) ? "local" : commit
+    isempty(diff_hash) ? base : string(base, "+", diff_hash)
+end
+
+function make_context()
+    branch = detect_branch()
+    tag = detect_tag()
+    commit = detect_commit()
+    date = iso_utc_now()
+    (is_dirty, diff_hash) = detect_dirty_state()
+    code_state_id = detect_code_state_id(commit, diff_hash)
+    label = first(commit, min(7, ncodeunits(commit)))
+
+    return (; branch, tag, code_state_id, label, commit, date,
+        metric_kind="runtime",
+        machine_id=detect_machine_id(),
+        cpu_model=detect_cpu_model(),
+        cpu_threads=Sys.CPU_THREADS,
+        arch=string(Sys.ARCH),
+        os=lowercase(string(Sys.KERNEL)),
+        julia_version=string(VERSION),
+        is_dirty,
+        notes=get(ENV, "BENCH_NOTES", ""))
+end
+
+function init_database!(db)
+    SQLite.execute(db,
+        """
+CREATE TABLE IF NOT EXISTS benchmark_results (
+    branch TEXT NOT NULL,
+    tag TEXT NOT NULL,
+    code_state_id TEXT NOT NULL,
+    label TEXT NOT NULL,
+    "commit" TEXT NOT NULL,
+    date TEXT NOT NULL,
+    benchmark_key TEXT NOT NULL,
+    metric_kind TEXT NOT NULL,
+    time_ns_median REAL NOT NULL,
+    time_ns_min REAL NOT NULL,
+    memory_bytes_min INTEGER NOT NULL,
+    allocs_min INTEGER NOT NULL,
+    machine_id TEXT NOT NULL,
+    cpu_model TEXT NOT NULL,
+    cpu_threads INTEGER NOT NULL,
+    arch TEXT NOT NULL,
+    os TEXT NOT NULL,
+    julia_version TEXT NOT NULL,
+    is_dirty INTEGER NOT NULL,
+    notes TEXT NOT NULL,
+    PRIMARY KEY (code_state_id, machine_id, benchmark_key, metric_kind))
+""")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_date_index ON benchmark_results (date)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_branch_tag_index ON benchmark_results (branch, tag)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_benchmark_key_index ON benchmark_results (benchmark_key)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_machine_id_index ON benchmark_results (machine_id)")
+end
+
+function open_database(path::AbstractString)
+    mkpath(dirname(path))
+    db = SQLite.DB(path)
+    SQLite.execute(db, "PRAGMA journal_mode=WAL")
+    SQLite.execute(db, "PRAGMA synchronous=NORMAL")
+    init_database!(db)
+    db
+end
+
+function insert_results!(stmt::SQLite.Stmt, results::BenchmarkGroup, context, prefix::Vector{String})
+    count = 0
+    for (name, value) in pairs(results)
+        path = [prefix; String(name)]
+        if value isa BenchmarkGroup
+            count += insert_results!(stmt, value, context, path)
+        else
+            SQLite.execute(stmt, benchmark_row(context, join(path, "/"), value))
+            count += 1
+        end
+    end
+    count
+end
+
+function benchmark_row(context, benchmark_key::AbstractString, trial::BenchmarkTools.Trial)
+    stats = median(trial)
+    best = minimum(trial)
+    (
+        context.branch,
+        context.tag,
+        context.code_state_id,
+        context.label,
+        context.commit,
+        context.date,
+        benchmark_key,
+        context.metric_kind,
+        Float64(stats.time),
+        Float64(best.time),
+        Int(best.memory),
+        Int(best.allocs),
+        context.machine_id,
+        context.cpu_model,
+        Int(context.cpu_threads),
+        context.arch,
+        context.os,
+        context.julia_version,
+        Int(context.is_dirty),
+        context.notes,
+    )
+end
+
+function insert_results!(db::SQLite.DB, results::BenchmarkGroup, context)
+    stmt = SQLite.Stmt(db,
+        """
+INSERT INTO benchmark_results (
+    branch,
+    tag,
+    code_state_id,
+    label,
+    "commit",
+    date,
+    benchmark_key,
+    metric_kind,
+    time_ns_median,
+    time_ns_min,
+    memory_bytes_min,
+    allocs_min,
+    machine_id,
+    cpu_model,
+    cpu_threads,
+    arch,
+    os,
+    julia_version,
+    is_dirty,
+    notes
+)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (code_state_id, machine_id, benchmark_key, metric_kind) DO UPDATE SET
+    branch = excluded.branch,
+    tag = excluded.tag,
+    label = excluded.label,
+    "commit" = excluded."commit",
+    date = excluded.date,
+    time_ns_median = excluded.time_ns_median,
+    time_ns_min = excluded.time_ns_min,
+    memory_bytes_min = excluded.memory_bytes_min,
+    allocs_min = excluded.allocs_min,
+    cpu_model = excluded.cpu_model,
+    cpu_threads = excluded.cpu_threads,
+    arch = excluded.arch,
+    os = excluded.os,
+    julia_version = excluded.julia_version,
+    is_dirty = excluded.is_dirty,
+    notes = excluded.notes
+""")
+    SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
+    count = insert_results!(stmt, results, context, String[])
+    DBInterface.close!(stmt)
+    SQLite.execute(db, "COMMIT")
+    count
+end
+
+context = make_context()
+
+db = open_database(RESULTS_DB_PATH)
+count = insert_results!(db, results, context)
+close(db)
+
+println("Wrote $count benchmark rows to $(RESULTS_DB_PATH)")

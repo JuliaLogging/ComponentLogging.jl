@@ -1,0 +1,14 @@
+[deps]
+BenchmarkTools = "6e4b80f9-dd63-53aa-95a3-0cdb28fa8baf"
+ComponentLogging = "3f6ec708-df3b-46b4-8b70-ec9fa53b9f7d"
+DBInterface = "a10d1c49-ce27-4219-8d33-6db1a4562965"
+SQLite = "0aa819cd-b072-5ff4-a722-6bc24af294d9"
+
+[sources]
+ComponentLogging = {path = ".."}
+
+[compat]
+BenchmarkTools = "1"
+DBInterface = "2"
+SQLite = "1"
+julia = "1.10"

@@ -1,0 +1,82 @@
+name: Performance
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/perf.yml"
+      - "benchmark/**"
+      - "src/**"
+      - "Project.toml"
+  push:
+    branches:
+      - master
+    paths:
+      - ".github/workflows/perf.yml"
+      - "benchmark/**"
+      - "src/**"
+      - "Project.toml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate benchmark project
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Install AirspeedVelocity
+        run: julia -e 'using Pkg; Pkg.add(name="AirspeedVelocity", version="0.6"); Pkg.build("AirspeedVelocity")'
+
+      - name: Choose comparison revisions
+        run: |
+          if [[ "${{ github.event_name }}" == "pull_request" ]]; then
+            echo "BASE_REV=${{ github.event.pull_request.base.sha }}" >> "${GITHUB_ENV}"
+            echo "HEAD_REV=${{ github.event.pull_request.head.sha }}" >> "${GITHUB_ENV}"
+          else
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              echo "BASE_REV=$(git rev-parse HEAD^)" >> "${GITHUB_ENV}"
+            else
+              echo "BASE_REV=$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+            fi
+            echo "HEAD_REV=$(git rev-parse HEAD)" >> "${GITHUB_ENV}"
+          fi
+
+      - name: Run AirspeedVelocity comparison
+        run: |
+          ~/.julia/bin/benchpkg ComponentLogging --rev="${BASE_REV},${HEAD_REV}" --bench-on="${HEAD_REV}"
+
+      - name: Render comparison table
+        run: |
+          ~/.julia/bin/benchpkgtable ComponentLogging --rev="${BASE_REV},${HEAD_REV}" | tee benchmark/asv-summary.txt
+          {
+            echo "## AirspeedVelocity benchmark comparison"
+            echo
+            echo "- Base: \`${BASE_REV}\`"
+            echo "- Head: \`${HEAD_REV}\`"
+            echo
+            echo '```text'
+            cat benchmark/asv-summary.txt
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
