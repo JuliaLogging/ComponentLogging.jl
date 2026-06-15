@@ -3,3 +3,4 @@
 /docs/Manifest*.toml
 /docs/build/
 /benchmark/Manifest.toml
+results.sqlite

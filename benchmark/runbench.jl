@@ -1,6 +1,7 @@
-using Pkg
+import Pkg
+const Target_Package_Path = abspath(get(ENV, "BENCH_TARGET_PATH", joinpath(@__DIR__, "..")))
 Pkg.activate(@__DIR__)
-Pkg.develop(path=joinpath(@__DIR__, ".."))
+Pkg.develop(path=Target_Package_Path)
 Pkg.instantiate()
 
 using BenchmarkTools
@@ -25,30 +26,35 @@ iso_utc_now() = Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:S
 
 function detect_branch()
     get(ENV, "GITHUB_REF_TYPE", "") == "branch" && return get(ENV, "GITHUB_REF_NAME", "")
-    branch = readchomp(`git branch --show-current`)
+    branch = readchomp(`git -C $Target_Package_Path branch --show-current`)
     return isempty(branch) ? "master" : branch
 end
 
 function detect_tag()
     get(ENV, "GITHUB_REF_TYPE", "") == "tag" && return get(ENV, "GITHUB_REF_NAME", "")
-    tags = readchomp(`git tag --points-at HEAD`)
+    tags = readchomp(`git -C $Target_Package_Path tag --points-at HEAD`)
     return isempty(tags) ? tags : split(tags, '\n'; keepempty=false) |> first
 end
 
 function detect_commit()
     commit = get(ENV, "GITHUB_SHA", "")
-    isempty(commit) ? readchomp(`git rev-parse HEAD`) : commit
+    isempty(commit) ? readchomp(`git -C $Target_Package_Path rev-parse HEAD`) : commit
+end
+
+function detect_date()
+    date = get(ENV, "BENCH_DATE", "")
+    isempty(date) ? iso_utc_now() : date
 end
 
 function detect_dirty_state()
-    staged_dirty = !success(pipeline(`git diff --cached --quiet`, stdout=devnull, stderr=devnull))
-    unstaged_dirty = !success(pipeline(`git diff --quiet`, stdout=devnull, stderr=devnull))
+    staged_dirty = !success(pipeline(`git -C $Target_Package_Path diff --cached --quiet`, stdout=devnull, stderr=devnull))
+    unstaged_dirty = !success(pipeline(`git -C $Target_Package_Path diff --quiet`, stdout=devnull, stderr=devnull))
 
     if !(staged_dirty || unstaged_dirty)
         return (is_dirty=false, diff_hash="")
     else
-        staged_diff = staged_dirty ? read(pipeline(ignorestatus(`git diff --cached --binary`), stderr=devnull)) : UInt8[]
-        unstaged_diff = unstaged_dirty ? read(pipeline(ignorestatus(`git diff --binary`), stderr=devnull)) : UInt8[]
+        staged_diff = staged_dirty ? read(pipeline(ignorestatus(`git -C $Target_Package_Path diff --cached --binary`), stderr=devnull)) : UInt8[]
+        unstaged_diff = unstaged_dirty ? read(pipeline(ignorestatus(`git -C $Target_Package_Path diff --binary`), stderr=devnull)) : UInt8[]
         diff_hash = bytes2hex(sha1(vcat(staged_diff, UInt8[0x0a], unstaged_diff)))
         return (is_dirty=true, diff_hash=diff_hash)
     end
@@ -73,7 +79,7 @@ function make_context()
     branch = detect_branch()
     tag = detect_tag()
     commit = detect_commit()
-    date = iso_utc_now()
+    date = detect_date()
     (is_dirty, diff_hash) = detect_dirty_state()
     code_state_id = detect_code_state_id(commit, diff_hash)
     label = first(commit, min(7, ncodeunits(commit)))

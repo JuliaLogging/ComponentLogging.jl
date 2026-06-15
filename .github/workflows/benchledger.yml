@@ -1,0 +1,129 @@
+name: BenchLedger
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: benchledger-pages
+  cancel-in-progress: false
+
+env:
+  BENCHLEDGER_VERSION: "0.1.1"
+  BENCHLEDGER_REPOSITORY: "abcdvvvv/BenchLedger"
+  BENCHLEDGER_DIST: "BenchLedger-0.1.1-dist.tar.gz"
+
+jobs:
+  build-and-publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Check out Pages branch
+        uses: actions/checkout@v6
+        with:
+          ref: gh-pages
+          path: gh-pages
+          fetch-depth: 1
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate benchmark project
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run benchmarks into Pages database
+        env:
+          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/componentlogging.sqlite
+          BENCH_NOTES: "GitHub Actions BenchLedger run"
+        run: |
+          mkdir -p "$(dirname "$BENCH_DB_PATH")"
+          julia --project=benchmark benchmark/runbench.jl
+
+      - name: Checkpoint benchmark database
+        env:
+          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/componentlogging.sqlite
+        run: |
+          julia --project=benchmark -e 'using SQLite; db = SQLite.DB(ENV["BENCH_DB_PATH"]); SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"); close(db)'
+          rm -f "${BENCH_DB_PATH}-wal" "${BENCH_DB_PATH}-shm"
+
+      - name: Download BenchLedger web release
+        run: |
+          url="https://github.com/${BENCHLEDGER_REPOSITORY}/releases/download/v${BENCHLEDGER_VERSION}/${BENCHLEDGER_DIST}"
+          curl -fsSL "$url" -o /tmp/benchledger-dist.tar.gz
+          rm -rf /tmp/benchledger-dist
+          mkdir -p /tmp/benchledger-dist
+          tar -xzf /tmp/benchledger-dist.tar.gz -C /tmp/benchledger-dist
+
+      - name: Install BenchLedger viewer
+        run: |
+          mkdir -p gh-pages/benchledger/data
+          find gh-pages/benchledger -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
+          cp -a /tmp/benchledger-dist/. gh-pages/benchledger/
+
+      - name: Generate BenchLedger manifest
+        run: |
+          db="gh-pages/benchledger/data/componentlogging.sqlite"
+          generated_at="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
+          sha256="$(sha256sum "$db" | cut -d' ' -f1)"
+          size_bytes="$(stat -c '%s' "$db")"
+
+          cat > gh-pages/benchledger/benchledger.json <<EOF
+          {
+            "manifest_version": 1,
+            "benchledger_web_version": "${BENCHLEDGER_VERSION}",
+            "generated_at": "${generated_at}",
+            "site": {
+              "title": "ComponentLogging.jl BenchLedger",
+              "description": "Benchmark history for ComponentLogging.jl"
+            },
+            "databases": [
+              {
+                "id": "componentlogging",
+                "name": "ComponentLogging.jl",
+                "description": "Benchmark history for ComponentLogging.jl",
+                "url": "./data/componentlogging.sqlite",
+                "sha256": "${sha256}",
+                "size_bytes": ${size_bytes},
+                "packed_at": "${generated_at}",
+                "schema_version": 1,
+                "metadata_preview": {
+                  "name": "ComponentLogging.jl",
+                  "project_url": "https://github.com/JuliaLogging/ComponentLogging.jl",
+                  "logo_url": null
+                }
+              }
+            ]
+          }
+          EOF
+
+      - name: Publish BenchLedger page
+        working-directory: gh-pages
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add benchledger
+
+          if git diff --cached --quiet; then
+            echo "No BenchLedger page changes to publish."
+          else
+            git commit -m "Update BenchLedger benchmark page"
+            git push origin HEAD:gh-pages
+          fi
