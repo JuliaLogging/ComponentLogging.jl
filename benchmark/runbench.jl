@@ -1,29 +1,3 @@
-#=
-[
-  {
-    "branch": "master or feature branch name",
-    "tag": "v0.1.6 or empty",
-    "code_state_id": "full_commit_sha, or full_commit_sha + '+' + hash(staged diff + unstaged diff)",
-    "label": "display label, now it's short commit",
-    "commit": "full sha or empty",
-    "date": "ISO-8601 datetime",
-    "benchmark_key": "enabled/clog/default/text",
-    "metric_kind": "runtime or compile_first_call",
-    "time_ns_median": 29.24,
-    "time_ns_min": 29.22,
-    "memory_bytes_min": 0,
-    "allocs_min": 0,
-    "machine_id": "user-defined or hostname-based stable machine id",
-    "cpu_model": "CPU model string",
-    "cpu_threads": 16,
-    "arch": "x86_64 or aarch64",
-    "os": "linux or macos or windows",
-    "julia_version": "1.12.0",
-    "is_dirty": false,
-    "notes": "optional free-form note"
-  }
-]
-=#
 using Pkg
 Pkg.activate(@__DIR__)
 Pkg.develop(path=joinpath(@__DIR__, ".."))
@@ -37,7 +11,15 @@ using SQLite
 
 include(joinpath(@__DIR__, "benchmarks.jl"))
 
-const RESULTS_DB_PATH = get(ENV, "BENCH_DB_PATH", joinpath(@__DIR__, "results.sqlite"))
+const Results_DB_Path = get(ENV, "BENCH_DB_PATH", joinpath(@__DIR__, "results.sqlite"))
+const Benchledger_Schema_Version = "1"
+const Benchledger_Metadata_Defaults = (
+    name="ComponentLogging.jl",
+    description="Benchmark history for ComponentLogging.jl",
+    project_url="https://github.com/JuliaLogging/ComponentLogging.jl",
+    logo_url="",
+    notes="",
+)
 
 iso_utc_now() = Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sss") * "Z"
 
@@ -111,6 +93,12 @@ end
 function init_database!(db)
     SQLite.execute(db,
         """
+CREATE TABLE IF NOT EXISTS benchledger_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL)
+""")
+    SQLite.execute(db,
+        """
 CREATE TABLE IF NOT EXISTS benchmark_results (
     branch TEXT NOT NULL,
     tag TEXT NOT NULL,
@@ -140,12 +128,34 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_machine_id_index ON benchmark_results (machine_id)")
 end
 
-function open_database(path::AbstractString)
+function make_metadata!(db, context)
+    metadata = (
+        schema_version=Benchledger_Schema_Version,
+        name=Benchledger_Metadata_Defaults.name,
+        description=Benchledger_Metadata_Defaults.description,
+        project_url=Benchledger_Metadata_Defaults.project_url,
+        logo_url=Benchledger_Metadata_Defaults.logo_url,
+        created_at=context.date,
+        updated_at=context.date,
+        notes=Benchledger_Metadata_Defaults.notes,
+    )
+    for (key, value) in pairs(metadata)
+        DBInterface.execute(db, """
+INSERT INTO benchledger_metadata (key, value)
+VALUES (?, ?)
+ON CONFLICT (key) DO UPDATE SET value = excluded.value
+""", (String(key), String(value)))
+    end
+end
+
+function open_database(path::AbstractString, context)
     mkpath(dirname(path))
+    is_new_db = !isfile(path)
     db = SQLite.DB(path)
     SQLite.execute(db, "PRAGMA journal_mode=WAL")
     SQLite.execute(db, "PRAGMA synchronous=NORMAL")
     init_database!(db)
+    is_new_db && make_metadata!(db, context)
     db
 end
 
@@ -242,9 +252,8 @@ ON CONFLICT (code_state_id, machine_id, benchmark_key, metric_kind) DO UPDATE SE
 end
 
 context = make_context()
-
-db = open_database(RESULTS_DB_PATH)
+db = open_database(Results_DB_Path, context)
 count = insert_results!(db, results, context)
 close(db)
 
-println("Wrote $count benchmark rows to $(RESULTS_DB_PATH)")
+println("Wrote $count benchmark rows to $(Results_DB_Path)")
