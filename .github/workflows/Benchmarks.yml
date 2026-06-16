@@ -22,6 +22,7 @@ env:
 
 jobs:
   build-and-publish:
+    name: Ubuntu 24.04 - x64
     runs-on: ubuntu-24.04
     timeout-minutes: 60
 
@@ -54,8 +55,16 @@ jobs:
           BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/componentlogging.sqlite
           BENCH_NOTES: "GitHub Actions BenchLedger run"
         run: |
+          echo "Dirty state before benchmarks:"
+          git status --short
+          git diff --stat
+
           mkdir -p "$(dirname "$BENCH_DB_PATH")"
           julia --project=benchmark benchmark/runbench.jl
+
+          echo "Dirty state after benchmarks:"
+          git status --short
+          git diff --stat
 
       - name: Checkpoint benchmark database
         env:
