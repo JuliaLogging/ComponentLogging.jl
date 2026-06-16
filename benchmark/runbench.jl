@@ -8,6 +8,7 @@ end
 
 using BenchmarkTools, Dates, SHA
 using DBInterface, SQLite
+using JSON
 
 include(joinpath(@__DIR__, "benchmarks.jl"))
 
@@ -37,7 +38,7 @@ function publish_pages_db!()
     end
 end
 
-const Benchledger_Schema_Version = "1"
+const Benchledger_Schema_Version = "2"
 const Benchledger_Metadata_Defaults = (
     name="ComponentLogging.jl",
     description="Benchmark history for ComponentLogging.jl",
@@ -136,7 +137,9 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     label TEXT NOT NULL,
     "commit" TEXT NOT NULL,
     date TEXT NOT NULL,
-    benchmark_key TEXT NOT NULL,
+    benchmark_path TEXT NOT NULL,
+    benchmark_id TEXT NOT NULL,
+    benchmark_label TEXT NOT NULL,
     metric_kind TEXT NOT NULL,
     time_ns_median REAL NOT NULL,
     time_ns_min REAL NOT NULL,
@@ -150,11 +153,11 @@ CREATE TABLE IF NOT EXISTS benchmark_results (
     julia_version TEXT NOT NULL,
     is_dirty INTEGER NOT NULL,
     notes TEXT NOT NULL,
-    PRIMARY KEY (code_state_id, machine_id, benchmark_key, metric_kind))
+    PRIMARY KEY (code_state_id, machine_id, benchmark_id, metric_kind))
 """)
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_date_index ON benchmark_results (date)")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_branch_tag_index ON benchmark_results (branch, tag)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_benchmark_key_index ON benchmark_results (benchmark_key)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_benchmark_id_index ON benchmark_results (benchmark_id)")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_machine_id_index ON benchmark_results (machine_id)")
 end
 
@@ -196,14 +199,23 @@ function insert_results!(stmt::SQLite.Stmt, results::BenchmarkGroup, context, pr
         if value isa BenchmarkGroup
             count += insert_results!(stmt, value, context, path)
         else
-            SQLite.execute(stmt, benchmark_row(context, join(path, "/"), value))
+            SQLite.execute(stmt, benchmark_row(context, path, value))
             count += 1
         end
     end
     count
 end
 
-function benchmark_row(context, benchmark_key::AbstractString, trial::BenchmarkTools.Trial)
+function benchmark_id(path::Vector{String})
+    encoded = IOBuffer()
+    for segment in path
+        write(encoded, string(sizeof(segment), ":"))
+        write(encoded, segment)
+    end
+    bytes2hex(sha1(take!(encoded)))
+end
+
+function benchmark_row(context, path::Vector{String}, trial::BenchmarkTools.Trial)
     stats = median(trial)
     best = minimum(trial)
     (
@@ -213,7 +225,9 @@ function benchmark_row(context, benchmark_key::AbstractString, trial::BenchmarkT
         context.label,
         context.commit,
         context.date,
-        benchmark_key,
+        JSON.json(path),
+        benchmark_id(path),
+        join(path, " / "),
         context.metric_kind,
         Float64(stats.time),
         Float64(best.time),
@@ -240,7 +254,9 @@ INSERT INTO benchmark_results (
     label,
     "commit",
     date,
-    benchmark_key,
+    benchmark_path,
+    benchmark_id,
+    benchmark_label,
     metric_kind,
     time_ns_median,
     time_ns_min,
@@ -255,13 +271,15 @@ INSERT INTO benchmark_results (
     is_dirty,
     notes
 )
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-ON CONFLICT (code_state_id, machine_id, benchmark_key, metric_kind) DO UPDATE SET
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+ON CONFLICT (code_state_id, machine_id, benchmark_id, metric_kind) DO UPDATE SET
     branch = excluded.branch,
     tag = excluded.tag,
     label = excluded.label,
     "commit" = excluded."commit",
     date = excluded.date,
+    benchmark_path = excluded.benchmark_path,
+    benchmark_label = excluded.benchmark_label,
     time_ns_median = excluded.time_ns_median,
     time_ns_min = excluded.time_ns_min,
     memory_bytes_min = excluded.memory_bytes_min,

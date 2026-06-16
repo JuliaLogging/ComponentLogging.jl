@@ -99,20 +99,22 @@ results = run(SUITE; verbose=true)
 
 if get(ENV, "CI", "false") != "true"
     println("\n" * "─"^24 * " SUMMARY (ns/op，allocs) " * "─"^25)
-    prefix = ""
-    for (k, v) in results
-        if v isa BenchmarkGroup
-            _summarize!(v, isempty(prefix) ? string(k) : string(prefix, "/", k))
-        else
-            t = minimum(v).time
-            a = minimum(v).allocs
-            b = minimum(v).memory
-            println(rpad(prefix == "" ? string(k) : string(prefix, "/", k), 30),
-                lpad(@sprintf("%8.2f", t / 1.0), 12), " ns   ",
-                lpad(a, 6), " allocs   ",
-                lpad(@sprintf("%.2f KiB", b / 1024), 10))
+    function _summarize!(results, prefix="")
+        for (k, v) in results
+            if v isa BenchmarkGroup
+                _summarize!(v, isempty(prefix) ? string(k) : string(prefix, "/", k))
+            else
+                t = minimum(v).time
+                a = minimum(v).allocs
+                b = minimum(v).memory
+                println(rpad(prefix == "" ? string(k) : string(prefix, "/", k), 30),
+                    lpad(@sprintf("%8.2f", t / 1.0), 12), " ns   ",
+                    lpad(a, 6), " allocs   ",
+                    lpad(@sprintf("%.2f KiB", b / 1024), 10))
+            end
         end
     end
+    _summarize!(results)
     println("─"^74)
 end
 
