@@ -218,6 +218,9 @@ jobs:
             julia --project="$REPO/benchmark" "$REPO/benchmark/runbench.jl"
           done
 
+          git -C "$PAGES_WT" config user.name "github-actions[bot]"
+          git -C "$PAGES_WT" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
           git -C "$PAGES_WT" add benchmarks/data/benchledger.sqlite
           if git -C "$PAGES_WT" diff --cached --quiet; then
             echo "No benchmark database changes."
