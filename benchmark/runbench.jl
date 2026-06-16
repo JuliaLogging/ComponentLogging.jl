@@ -1,18 +1,42 @@
 import Pkg
-const Target_Package_Path = abspath(get(ENV, "BENCH_TARGET_PATH", joinpath(@__DIR__, "..")))
 Pkg.activate(@__DIR__)
-Pkg.develop(path=Target_Package_Path)
-Pkg.instantiate()
+const Target_Package_Path = abspath(get(ENV, "BENCH_TARGET_PATH", joinpath(@__DIR__, "..")))
+if haskey(ENV, "BENCH_TARGET_PATH")
+    Pkg.develop(path=Target_Package_Path)
+    Pkg.instantiate()
+end
 
-using BenchmarkTools
-using Dates
-using DBInterface
-using SHA
-using SQLite
+using BenchmarkTools, Dates, SHA
+using DBInterface, SQLite
 
 include(joinpath(@__DIR__, "benchmarks.jl"))
 
-const Results_DB_Path = get(ENV, "BENCH_DB_PATH", joinpath(@__DIR__, "results.sqlite"))
+const Bench_DB_In_Current_Branch = lowercase(get(ENV, "BENCH_DB_IN_CURRENT_BRANCH", "false")) in ("true", "1", "yes")
+const Pages_Branch = "gh-pages"
+const Pages_Worktree = abspath(joinpath(tempdir(), "benchledger-pages"))
+const Pages_DB_Path = joinpath(Pages_Worktree, "benchledger", "data", "benchledger.sqlite")
+
+const Results_DB_Path = if haskey(ENV, "BENCH_DB_PATH")
+    ENV["BENCH_DB_PATH"]
+elseif Bench_DB_In_Current_Branch
+    joinpath(@__DIR__, "results.sqlite")
+else
+    !isdir(Pages_Worktree) && run(`git worktree add $Pages_Worktree $Pages_Branch`)
+    Pages_DB_Path
+end
+
+function publish_pages_db!()
+    if !Bench_DB_In_Current_Branch && !haskey(ENV, "BENCH_DB_PATH")
+        run(`git -C $Pages_Worktree add benchledger/data/benchledger.sqlite`)
+        if success(`git -C $Pages_Worktree diff --cached --quiet`)
+            println("No benchmark database changes.")
+        else
+            run(`git -C $Pages_Worktree commit -m "Update benchmark database"`)
+            run(`git -C $Pages_Worktree push origin HEAD:$Pages_Branch`)
+        end
+    end
+end
+
 const Benchledger_Schema_Version = "1"
 const Benchledger_Metadata_Defaults = (
     name="ComponentLogging.jl",
@@ -261,5 +285,6 @@ context = make_context()
 db = open_database(Results_DB_Path, context)
 count = insert_results!(db, results, context)
 close(db)
+publish_pages_db!()
 
 println("Wrote $count benchmark rows to $(Results_DB_Path)")

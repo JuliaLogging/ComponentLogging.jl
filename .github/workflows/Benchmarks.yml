@@ -50,25 +50,20 @@ jobs:
       - name: Instantiate benchmark project
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 
-      - name: Run benchmarks into Pages database
+      - name: Run benchmarks into benchmark database
         env:
-          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/componentlogging.sqlite
+          BENCH_DB_IN_CURRENT_BRANCH: false
+          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/benchledger.sqlite
+          # BENCH_DB_PATH: ${{ github.workspace }}/benchmark/benchledger.sqlite (if database is not in page deploy branch)
           BENCH_NOTES: "GitHub Actions BenchLedger run"
         run: |
-          echo "Dirty state before benchmarks:"
-          git status --short
-          git diff --stat
-
           mkdir -p "$(dirname "$BENCH_DB_PATH")"
           julia --project=benchmark benchmark/runbench.jl
 
-          echo "Dirty state after benchmarks:"
-          git status --short
-          git diff --stat
-
       - name: Checkpoint benchmark database
         env:
-          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/componentlogging.sqlite
+          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchledger/data/benchledger.sqlite
+          # BENCH_DB_PATH: ${{ github.workspace }}/benchmark/benchledger.sqlite (if database is not in page deploy branch)
         run: |
           julia --project=benchmark -e 'using SQLite; db = SQLite.DB(ENV["BENCH_DB_PATH"]); SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"); close(db)'
           rm -f "${BENCH_DB_PATH}-wal" "${BENCH_DB_PATH}-shm"
@@ -87,9 +82,25 @@ jobs:
           find gh-pages/benchledger -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
           cp -a /tmp/benchledger-dist/. gh-pages/benchledger/
 
+      # - name: Commit source database and copy to Pages tree
+      #   run: |
+      #     git config user.name "github-actions[bot]"
+      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      #     git add ${{ github.workspace }}/benchmark/benchledger.sqlite
+      #     if git diff --cached --quiet; then
+      #       echo "No benchmark database changes on source branch."
+      #     else
+      #       git commit -m "Update benchmark database [skip ci]"
+      #       git push
+      #     fi
+
+      #     mkdir -p gh-pages/benchledger/data
+      #     cp "${{ github.workspace }}/benchmark/benchledger.sqlite" "${{ github.workspace }}/gh-pages/benchledger/data/benchledger.sqlite"
+
       - name: Generate BenchLedger manifest
         run: |
-          db="gh-pages/benchledger/data/componentlogging.sqlite"
+          db="gh-pages/benchledger/data/benchledger.sqlite"
           generated_at="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
           sha256="$(sha256sum "$db" | cut -d' ' -f1)"
           size_bytes="$(stat -c '%s' "$db")"
@@ -108,7 +119,7 @@ jobs:
                 "id": "componentlogging",
                 "name": "ComponentLogging.jl",
                 "description": "Benchmark history for ComponentLogging.jl",
-                "url": "./data/componentlogging.sqlite",
+                "url": "./data/benchledger.sqlite",
                 "sha256": "${sha256}",
                 "size_bytes": ${size_bytes},
                 "packed_at": "${generated_at}",

@@ -97,9 +97,10 @@ SUITE["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG
 tune!(SUITE; seconds=2.0)
 results = run(SUITE; verbose=true)
 
-println("\n" * "─"^24 * " SUMMARY (ns/op，allocs) " * "─"^25)
-function _summarize!(grp, prefix="")
-    for (k, v) in grp
+if get(ENV, "CI", "false") != "true"
+    println("\n" * "─"^24 * " SUMMARY (ns/op，allocs) " * "─"^25)
+    prefix = ""
+    for (k, v) in results
         if v isa BenchmarkGroup
             _summarize!(v, isempty(prefix) ? string(k) : string(prefix, "/", k))
         else
@@ -112,9 +113,8 @@ function _summarize!(grp, prefix="")
                 lpad(@sprintf("%.2f KiB", b / 1024), 10))
         end
     end
+    println("─"^74)
 end
-_summarize!(results)
-println("─"^74)
 
 #=
 ===== SUMMARY (ns/op，allocs) =====
