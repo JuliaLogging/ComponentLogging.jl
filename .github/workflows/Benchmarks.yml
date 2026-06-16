@@ -2,6 +2,11 @@ name: Benchmarks
 
 on:
   workflow_dispatch:
+    inputs:
+      backfill:
+        description: "Backfill historical benchmark data"
+        required: true
+        default: "false"
   push:
     branches:
       - master
@@ -16,12 +21,13 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BENCHLEDGER_VERSION: "0.1.1"
+  BENCHLEDGER_VERSION: "0.1.2"
   BENCHLEDGER_REPOSITORY: "abcdvvvv/BenchLedger"
-  BENCHLEDGER_DIST: "BenchLedger-0.1.1-dist.tar.gz"
+  BENCHLEDGER_DIST: "BenchLedger-0.1.2-dist.tar.gz"
 
 jobs:
   build-and-publish:
+    if: github.event_name != 'workflow_dispatch' || inputs.backfill != 'true'
     name: Ubuntu 24.04 - x64
     runs-on: ubuntu-24.04
     timeout-minutes: 60
@@ -139,11 +145,85 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add benchledger
+          git add benchmarks
 
           if git diff --cached --quiet; then
-            echo "No BenchLedger page changes to publish."
+            echo "No benchmarks page changes to publish."
           else
             git commit -m "Update BenchLedger benchmark page"
             git push origin HEAD:gh-pages
           fi
+
+  backfill-benchmarks:
+    if: github.event_name == 'workflow_dispatch' && inputs.backfill == 'true'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "1"
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate benchmark project
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Backfill historical benchmark database
+        run: |
+          set -euo pipefail
+
+          REPO="$(git rev-parse --show-toplevel)"
+          REPO_NAME="$(basename "$REPO")"
+
+          PAGES_WT="/tmp/${REPO_NAME}-pages"
+          HIST_WT="/tmp/${REPO_NAME}-history"
+          DB="$PAGES_WT/benchmarks/data/benchledger.sqlite"
+
+          # Pages branch worktree: stores the benchmark database.
+          if ! git -C "$PAGES_WT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            rm -rf "$PAGES_WT"
+            git -C "$REPO" worktree add "$PAGES_WT" gh-pages
+          fi
+
+          # Historical source worktree: checked out to each old tag.
+          rm -rf "$HIST_WT"
+          git -C "$REPO" worktree add --detach "$HIST_WT" HEAD
+
+          mkdir -p "$(dirname "$DB")"
+
+          for tag in $(git -C "$REPO" tag --sort=v:refname); do
+            echo "Backfilling benchmark for $tag"
+
+            git -C "$HIST_WT" checkout --detach "$tag"
+
+            commit="$(git -C "$HIST_WT" rev-parse HEAD)"
+            date="$(git -C "$HIST_WT" show -s --format=%cI HEAD)"
+
+            GITHUB_REF_TYPE=tag \
+            GITHUB_REF_NAME="$tag" \
+            GITHUB_SHA="$commit" \
+            BENCH_DATE="$date" \
+            BENCH_TARGET_PATH="$HIST_WT" \
+            BENCH_DB_PATH="$DB" \
+            BENCH_DB_IN_CURRENT_BRANCH=false \
+            BENCH_NOTES="Backfilled with current benchmark suite against $tag" \
+            julia --project="$REPO/benchmark" "$REPO/benchmark/runbench.jl"
+          done
+
+          git -C "$PAGES_WT" add benchmarks/data/benchledger.sqlite
+          if git -C "$PAGES_WT" diff --cached --quiet; then
+            echo "No benchmark database changes."
+          else
+            git -C "$PAGES_WT" commit -m "Backfill benchmark database"
+            git -C "$PAGES_WT" push origin HEAD:gh-pages
+          fi
+
+          git -C "$REPO" worktree remove "$HIST_WT"
