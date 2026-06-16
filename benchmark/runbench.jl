@@ -27,7 +27,7 @@ end
 
 function publish_pages_db!()
     if !Bench_DB_In_Current_Branch && !haskey(ENV, "BENCH_DB_PATH")
-        run(`git -C $Pages_Worktree add benchledger/data/benchledger.sqlite`)
+        run(`git -C $Pages_Worktree add benchmarks/data/benchledger.sqlite`)
         if success(`git -C $Pages_Worktree diff --cached --quiet`)
             println("No benchmark database changes.")
         else

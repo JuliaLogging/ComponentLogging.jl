@@ -2,7 +2,7 @@
 
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://julialogging.github.io/ComponentLogging.jl/dev/)
 [![Build Status](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml?query=branch%3Amaster)
-[![Benchmarks](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/Benchmarks.yml/badge.svg)](https://julialogging.github.io/ComponentLogging.jl/benchledger/)
+[![Benchmarks](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/Benchmarks.yml/badge.svg)](https://julialogging.github.io/ComponentLogging.jl/benchmarks/)
 [![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.html)
 
@@ -271,7 +271,7 @@ Output:
 
 ### Benchmarking
 
-This project uses [BenchLedger](https://julialogging.github.io/ComponentLogging.jl/benchledger/) to continuously track benchmark results over time.
+This project uses [BenchLedger](https://julialogging.github.io/ComponentLogging.jl/benchmarks/) to continuously track benchmark results over time.
 
 We benchmark two paths under identical thresholds:
 1) filtered (`min=Error`, log at `Info`) — hot path in production;
