@@ -21,9 +21,9 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BENCHLEDGER_VERSION: "0.1.2"
+  BENCHLEDGER_VERSION: "0.2.0"
   BENCHLEDGER_REPOSITORY: "abcdvvvv/BenchLedger"
-  BENCHLEDGER_DIST: "BenchLedger-0.1.2-dist.tar.gz"
+  BENCHLEDGER_DIST: "BenchLedger-0.2.0-dist.tar.gz"
 
 jobs:
   build-and-publish:
