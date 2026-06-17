@@ -282,11 +282,12 @@ ON CONFLICT (key) DO UPDATE SET value = excluded.value
 end
 
 function validate_schema_version!(db::SQLite.DB, path::AbstractString)
-    schema_rows = collect(DBInterface.execute(db, "SELECT value FROM benchledger_metadata WHERE key = 'schema_version'"))
-    if isempty(schema_rows)
+    # Avoid collect(...) here: SQLite.jl can materialize this single-column result as missing.
+    schema_iter = iterate(DBInterface.execute(db, "SELECT value FROM benchledger_metadata WHERE key = 'schema_version'"))
+    if schema_iter === nothing
         error("Unsupported BenchLedger database in $(path): missing benchledger_metadata.schema_version.")
     end
-    schema_version = String(first(schema_rows).value)
+    schema_version = String(schema_iter[1].value)
     schema_version == Benchledger_Schema_Version || error("Unsupported BenchLedger schema version in $(path): $(schema_version). Expected $(Benchledger_Schema_Version).")
 
     result_columns = Set{String}()
@@ -341,19 +342,28 @@ function metric_rows(benchmark_path::Vector{String}, value)
     error("Unsupported benchmark leaf at $(join(benchmark_path, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
 end
 
-metric_rows(results::BenchmarkGroup) = append_metric_rows!(BenchmarkMetricRow[], results, String[])
 metric_rows(rows::Vector{BenchmarkMetricRow}) = rows
 metric_rows(rows::AbstractVector{<:BenchmarkMetricRow}) = BenchmarkMetricRow[row for row in rows]
 metric_rows(rows::AbstractVector{<:NamedTuple}) = [metric_row(row) for row in rows]
+metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple}, <:BenchmarkGroup}) = vcat(metric_rows(results[1]), metric_rows(results[2]))
 
-function append_metric_rows!(rows::Vector{BenchmarkMetricRow}, results::BenchmarkGroup, prefix::Vector{String})
+function flatten_trial_rows(results::BenchmarkGroup, prefix::Vector{String}=String[])
+    rows = Tuple{Vector{String}, Any}[]
     for (name, value) in pairs(results)
         benchmark_path = [prefix; String(name)]
         if value isa BenchmarkGroup
-            append_metric_rows!(rows, value, benchmark_path)
+            append!(rows, flatten_trial_rows(value, benchmark_path))
         else
-            append!(rows, metric_rows(benchmark_path, value))
+            push!(rows, (benchmark_path, value))
         end
+    end
+    rows
+end
+
+function metric_rows(results::BenchmarkGroup)
+    rows = BenchmarkMetricRow[]
+    for (benchmark_path, value) in flatten_trial_rows(results)
+        append!(rows, metric_rows(benchmark_path, value))
     end
     rows
 end
