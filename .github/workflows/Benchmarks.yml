@@ -9,7 +9,7 @@ on:
         default: "false"
   push:
     branches:
-      - master
+      - &benchmark_branch master
     tags:
       - "v*"
 
@@ -21,9 +21,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BENCHLEDGER_VERSION: "0.2.0"
-  BENCHLEDGER_REPOSITORY: "abcdvvvv/BenchLedger"
-  BENCHLEDGER_DIST: "BenchLedger-0.2.0-dist.tar.gz"
+  BENCHLEDGER_VERSION: "0.3.0"
+  BENCH_PACKAGE_NAME: "ComponentLogging.jl"
+  BENCH_PACKAGE_DESCRIPTION: "Benchmark history for ComponentLogging.jl"
+  BENCH_PACKAGE_URL: "https://github.com/JuliaLogging/ComponentLogging.jl"
+  BENCH_BRANCH: *benchmark_branch
 
 jobs:
   build-and-publish:
@@ -76,7 +78,7 @@ jobs:
 
       - name: Download BenchLedger web release
         run: |
-          url="https://github.com/${BENCHLEDGER_REPOSITORY}/releases/download/v${BENCHLEDGER_VERSION}/${BENCHLEDGER_DIST}"
+          url="https://github.com/abcdvvvv/BenchLedger/releases/download/v${BENCHLEDGER_VERSION}/BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
           curl -fsSL "$url" -o /tmp/benchledger-dist.tar.gz
           rm -rf /tmp/benchledger-dist
           mkdir -p /tmp/benchledger-dist
@@ -113,26 +115,26 @@ jobs:
 
           cat > gh-pages/benchmarks/benchledger.json <<EOF
           {
-            "manifest_version": 1,
+            "manifest_version": 3,
             "benchledger_web_version": "${BENCHLEDGER_VERSION}",
             "generated_at": "${generated_at}",
             "site": {
-              "title": "ComponentLogging.jl BenchLedger",
-              "description": "Benchmark history for ComponentLogging.jl"
+              "title": "${BENCH_PACKAGE_NAME} BenchLedger",
+              "description": "${BENCH_PACKAGE_DESCRIPTION}"
             },
             "databases": [
               {
-                "id": "componentlogging",
-                "name": "ComponentLogging.jl",
-                "description": "Benchmark history for ComponentLogging.jl",
+                "id": "${BENCH_PACKAGE_NAME}",
+                "name": "${BENCH_PACKAGE_NAME}",
+                "description": "${BENCH_PACKAGE_DESCRIPTION}",
                 "url": "./data/benchledger.sqlite",
                 "sha256": "${sha256}",
                 "size_bytes": ${size_bytes},
                 "packed_at": "${generated_at}",
                 "schema_version": 1,
                 "metadata_preview": {
-                  "name": "ComponentLogging.jl",
-                  "project_url": "https://github.com/JuliaLogging/ComponentLogging.jl",
+                  "name": "${BENCH_PACKAGE_NAME}",
+                  "project_url": "${BENCH_PACKAGE_URL}",
                   "logo_url": null
                 }
               }
