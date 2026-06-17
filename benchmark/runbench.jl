@@ -52,8 +52,7 @@ const Benchledger_Schema_Version = "3"
 iso_utc_now() = Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sss") * "Z"
 
 struct BenchmarkMetricRow
-    run_id::String
-    path::Vector{String}
+    benchmark_path::Vector{String}
     benchmark_id::String
     benchmark_label::String
     metric_name::String
@@ -325,33 +324,38 @@ function open_database(path::AbstractString, context)
     db
 end
 
-function metric_rows(context, path::Vector{String}, trial::BenchmarkTools.Trial)
+function metric_rows(benchmark_path::Vector{String}, trial::BenchmarkTools.Trial)
     stats = median(trial)
     best = minimum(trial)
-    benchmark_id_value = benchmark_id(path)
-    benchmark_label_value = join(path, " / ")
+    benchmark_id_value = benchmark_id(benchmark_path)
+    benchmark_label_value = join(benchmark_path, " / ")
     [
-        BenchmarkMetricRow(context.run_id, path, benchmark_id_value, benchmark_label_value, "time", "median", "ns", Float64(stats.time), "lower"),
-        BenchmarkMetricRow(context.run_id, path, benchmark_id_value, benchmark_label_value, "time", "min", "ns", Float64(best.time), "lower"),
-        BenchmarkMetricRow(context.run_id, path, benchmark_id_value, benchmark_label_value, "memory", "min", "bytes", Float64(best.memory), "lower"),
-        BenchmarkMetricRow(context.run_id, path, benchmark_id_value, benchmark_label_value, "allocs", "min", "count", Float64(best.allocs), "lower"),
+        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "time", "median", "ns", Float64(stats.time), "lower"),
+        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "time", "min", "ns", Float64(best.time), "lower"),
+        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "memory", "min", "bytes", Float64(best.memory), "lower"),
+        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "allocs", "min", "count", Float64(best.allocs), "lower"),
     ]
 end
 
-function insert_results!(stmt::SQLite.Stmt, results::BenchmarkGroup, context, prefix::Vector{String})
-    count = 0
+function metric_rows(benchmark_path::Vector{String}, value)
+    error("Unsupported benchmark leaf at $(join(benchmark_path, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
+end
+
+metric_rows(results::BenchmarkGroup) = append_metric_rows!(BenchmarkMetricRow[], results, String[])
+metric_rows(rows::Vector{BenchmarkMetricRow}) = rows
+metric_rows(rows::AbstractVector{<:BenchmarkMetricRow}) = BenchmarkMetricRow[row for row in rows]
+metric_rows(rows::AbstractVector{<:NamedTuple}) = [metric_row(row) for row in rows]
+
+function append_metric_rows!(rows::Vector{BenchmarkMetricRow}, results::BenchmarkGroup, prefix::Vector{String})
     for (name, value) in pairs(results)
-        path = [prefix; String(name)]
+        benchmark_path = [prefix; String(name)]
         if value isa BenchmarkGroup
-            count += insert_results!(stmt, value, context, path)
+            append_metric_rows!(rows, value, benchmark_path)
         else
-            for row in metric_rows(context, path, value)
-                SQLite.execute(stmt, benchmark_row(row))
-                count += 1
-            end
+            append!(rows, metric_rows(benchmark_path, value))
         end
     end
-    count
+    rows
 end
 
 function benchmark_id(path::Vector{String})
@@ -363,11 +367,52 @@ function benchmark_id(path::Vector{String})
     bytes2hex(sha1(take!(encoded)))
 end
 
-function benchmark_row(row::BenchmarkMetricRow)
+function required_metric_field(row::NamedTuple, field::Symbol)
+    hasproperty(row, field) || error("Missing required metric field: $(field).")
+    getproperty(row, field)
+end
+
+function metric_row(row::NamedTuple)
+    benchmark_path = hasproperty(row, :benchmark_path) ? begin
+        value = getproperty(row, :benchmark_path)
+        value isa AbstractVector || error("benchmark_path must be a vector of strings.")
+        String[String(segment) for segment in value]
+    end : error("Missing required metric field: benchmark_path.")
+    benchmark_id_value = hasproperty(row, :benchmark_id) ? String(getproperty(row, :benchmark_id)) : benchmark_id(benchmark_path)
+    benchmark_label_value = hasproperty(row, :benchmark_label) ? String(getproperty(row, :benchmark_label)) : join(benchmark_path, " / ")
+    BenchmarkMetricRow(
+        benchmark_path,
+        isempty(benchmark_id_value) ? benchmark_id(benchmark_path) : benchmark_id_value,
+        isempty(benchmark_label_value) ? join(benchmark_path, " / ") : benchmark_label_value,
+        String(required_metric_field(row, :metric_name)),
+        String(required_metric_field(row, :statistic)),
+        String(required_metric_field(row, :unit)),
+        Float64(required_metric_field(row, :value)),
+        String(required_metric_field(row, :better)),
+    )
+end
+
+function validate_metric_rows(rows::AbstractVector{<:BenchmarkMetricRow})
+    seen = Set{Tuple{String,String,String}}()
+    for row in rows
+        isempty(row.benchmark_id) && error("benchmark_id must not be empty.")
+        isempty(row.benchmark_label) && error("benchmark_label must not be empty.")
+        isempty(row.metric_name) && error("metric_name must not be empty.")
+        isempty(row.statistic) && error("statistic must not be empty.")
+        isfinite(row.value) || error("Metric value must be finite for $(row.benchmark_label) / $(row.metric_name) / $(row.statistic).")
+        row.better in ("lower", "higher", "neutral") || error("Unsupported better value for $(row.benchmark_label): $(row.better). Expected lower, higher, or neutral.")
+        key = (row.benchmark_id, row.metric_name, row.statistic)
+        key in seen && error("Duplicate metric row in the same run for benchmark_id=$(row.benchmark_id), metric_name=$(row.metric_name), statistic=$(row.statistic).")
+        push!(seen, key)
+    end
+    rows
+end
+
+function benchmark_result_row(run_id::AbstractString, row::BenchmarkMetricRow)
     (
         row.benchmark_id,
-        row.run_id,
-        JSON.json(row.path),
+        run_id,
+        JSON.json(row.benchmark_path),
         row.benchmark_label,
         row.metric_name,
         row.statistic,
@@ -399,23 +444,23 @@ INSERT INTO benchmark_runs (
 )
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 """, (
-    context.run_id,
-    context.branch,
-    context.tag,
-    context.code_state_id,
-    context.label,
-    context.commit,
-    context.code_date,
-    context.measured_at,
-    context.machine_id,
-    context.cpu_model,
-    Int(context.cpu_threads),
-    context.arch,
-    context.os,
-    context.julia_version,
-    Int(context.is_dirty),
-    context.notes,
-))
+            context.run_id,
+            context.branch,
+            context.tag,
+            context.code_state_id,
+            context.label,
+            context.commit,
+            context.code_date,
+            context.measured_at,
+            context.machine_id,
+            context.cpu_model,
+            Int(context.cpu_threads),
+            context.arch,
+            context.os,
+            context.julia_version,
+            Int(context.is_dirty),
+            context.notes,
+        ))
 end
 
 function touch_metadata!(db::SQLite.DB, measured_at::AbstractString)
@@ -426,7 +471,14 @@ ON CONFLICT (key) DO UPDATE SET value = excluded.value
 """, (measured_at,))
 end
 
-function persist_results!(db::SQLite.DB, results::BenchmarkGroup, context)
+function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:BenchmarkMetricRow}, run_id::AbstractString)
+    for row in rows
+        SQLite.execute(stmt, benchmark_result_row(run_id, row))
+    end
+    length(rows)
+end
+
+function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMetricRow}, context)
     stmt = SQLite.Stmt(db,
         """
 INSERT INTO benchmark_results (
@@ -445,7 +497,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
     try
         insert_run!(db, context)
-        count = insert_results!(stmt, results, context, String[])
+        count = insert_metric_rows!(stmt, validate_metric_rows(rows), context.run_id)
         touch_metadata!(db, context.measured_at)
         DBInterface.close!(stmt)
         SQLite.execute(db, "COMMIT")
@@ -459,7 +511,7 @@ end
 
 context = make_context()
 db = open_database(Results_DB_Path, context)
-count = persist_results!(db, results, context)
+count = persist_metric_rows!(db, metric_rows(results), context)
 close(db)
 publish_pages_db!()
 
