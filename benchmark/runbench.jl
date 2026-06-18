@@ -17,6 +17,8 @@ const Benchledger_Metadata_Defaults = (
     description="Benchmark history for ComponentLogging.jl",
     project_url="https://github.com/JuliaLogging/ComponentLogging.jl",
     logo_url="",
+    logo_url_light="",
+    logo_url_dark="",
     notes="",
 )
 # ⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃
