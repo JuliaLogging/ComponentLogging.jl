@@ -268,7 +268,8 @@ function make_metadata!(db, context)
         description=Benchledger_Metadata_Defaults.description,
         project_url=Benchledger_Metadata_Defaults.project_url,
         logo_url=Benchledger_Metadata_Defaults.logo_url,
-        created_at=context.measured_at,
+        logo_url_light=Benchledger_Metadata_Defaults.logo_url_light,
+        logo_url_dark=Benchledger_Metadata_Defaults.logo_url_dark,
         updated_at=context.measured_at,
         notes=Benchledger_Metadata_Defaults.notes,
     )
@@ -279,6 +280,11 @@ VALUES (?, ?)
 ON CONFLICT (key) DO UPDATE SET value = excluded.value
 """, (String(key), String(value)))
     end
+    DBInterface.execute(db, """
+INSERT INTO benchledger_metadata (key, value)
+VALUES ('created_at', ?)
+ON CONFLICT (key) DO NOTHING
+""", (context.measured_at,))
 end
 
 function validate_schema_version!(db::SQLite.DB, path::AbstractString)
@@ -317,11 +323,8 @@ function open_database(path::AbstractString, context)
     SQLite.execute(db, "PRAGMA journal_mode=WAL")
     SQLite.execute(db, "PRAGMA synchronous=NORMAL")
     init_database!(db)
-    if is_new_db
-        make_metadata!(db, context)
-    else
-        validate_schema_version!(db, path)
-    end
+    !is_new_db && validate_schema_version!(db, path)
+    make_metadata!(db, context)
     db
 end
 
@@ -345,10 +348,10 @@ end
 metric_rows(rows::Vector{BenchmarkMetricRow}) = rows
 metric_rows(rows::AbstractVector{<:BenchmarkMetricRow}) = BenchmarkMetricRow[row for row in rows]
 metric_rows(rows::AbstractVector{<:NamedTuple}) = [metric_row(row) for row in rows]
-metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple}, <:BenchmarkGroup}) = vcat(metric_rows(results[1]), metric_rows(results[2]))
+metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple},<:BenchmarkGroup}) = vcat(metric_rows(results[1]), metric_rows(results[2]))
 
 function flatten_trial_rows(results::BenchmarkGroup, prefix::Vector{String}=String[])
-    rows = Tuple{Vector{String}, Any}[]
+    rows = Tuple{Vector{String},Any}[]
     for (name, value) in pairs(results)
         benchmark_path = [prefix; String(name)]
         if value isa BenchmarkGroup
@@ -473,14 +476,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ))
 end
 
-function touch_metadata!(db::SQLite.DB, measured_at::AbstractString)
-    DBInterface.execute(db, """
-INSERT INTO benchledger_metadata (key, value)
-VALUES ('updated_at', ?)
-ON CONFLICT (key) DO UPDATE SET value = excluded.value
-""", (measured_at,))
-end
-
 function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:BenchmarkMetricRow}, run_id::AbstractString)
     for row in rows
         SQLite.execute(stmt, benchmark_result_row(run_id, row))
@@ -508,7 +503,6 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     try
         insert_run!(db, context)
         count = insert_metric_rows!(stmt, validate_metric_rows(rows), context.run_id)
-        touch_metadata!(db, context.measured_at)
         DBInterface.close!(stmt)
         SQLite.execute(db, "COMMIT")
         return count

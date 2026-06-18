@@ -21,7 +21,7 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BENCHLEDGER_VERSION: "0.3.1"
+  BENCHLEDGER_VERSION: "0.3.3"
   BENCH_PACKAGE_NAME: "ComponentLogging.jl"
   BENCH_PACKAGE_DESCRIPTION: "Benchmark history for ComponentLogging.jl"
   BENCH_PACKAGE_URL: "https://github.com/JuliaLogging/ComponentLogging.jl"
