@@ -69,7 +69,7 @@ jobs:
           BENCH_SOURCE_REVISION: ${{ github.sha }}
           BENCH_DATE: ${{ github.event.head_commit.timestamp || '' }}
           BENCH_RUN_METADATA: >-
-            {"ci":{"provider":"GitHub Actions","workflow":${{ toJson(github.workflow) }},"job":${{ toJson(github.job) }},"run_id":${{ toJson(github.run_id) }},"run_attempt":${{ github.run_attempt }},"event":${{ toJson(github.event_name) }},"runner_name":${{ toJson(runner.name) }},"run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}}
+            {"ci":{"provider":"GitHub Actions","workflow":${{ toJson(github.workflow) }},"job":${{ toJson(github.job) }},"run_id":${{ toJson(github.run_id) }},"run_attempt":${{ github.run_attempt }},"event":${{ toJson(github.event_name) }},"runner_name":${{ toJson(runner.name) }},"run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}
         run: |
           mkdir -p "$(dirname "$BENCH_DB_PATH")"
           julia --project=benchmark benchmark/runbench.jl
