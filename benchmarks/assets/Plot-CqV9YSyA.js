@@ -1,0 +1,1 @@
+import{n as e}from"./rolldown-runtime-Bh1tDfsg.js";import{n as t,t as n}from"./plotly-DG-lDEfY.js";var r=e(t(),1),i=e(n(),1),a=(typeof r.default==`function`?r.default:r.default.default)(i.default);export{a as t};
