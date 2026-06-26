@@ -21,11 +21,11 @@ concurrency:
   cancel-in-progress: false
 
 env:
-  BENCHLEDGER_VERSION: "0.3.3"
+  BENCHLEDGER_VERSION: "0.5.0"
   BENCH_PACKAGE_NAME: "ComponentLogging.jl"
   BENCH_PACKAGE_DESCRIPTION: "Benchmark history for ComponentLogging.jl"
   BENCH_PACKAGE_URL: "https://github.com/JuliaLogging/ComponentLogging.jl"
-  BENCH_BRANCH: *benchmark_branch
+  BENCH_SOURCE_BRANCH: *benchmark_branch
 
 jobs:
   build-and-publish:
@@ -50,7 +50,7 @@ jobs:
       - name: Set up Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: "1"
+          version: "lts"
 
       - name: Cache Julia packages
         uses: julia-actions/cache@v2
@@ -64,6 +64,12 @@ jobs:
           BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchmarks/data/benchledger.sqlite
           # BENCH_DB_PATH: ${{ github.workspace }}/benchmark/benchledger.sqlite (if database is not in page deploy branch)
           BENCH_NOTES: "GitHub Actions BenchLedger run"
+          BENCH_SOURCE_BRANCH: ${{ github.ref_type == 'branch' && github.ref_name || '' }}
+          BENCH_SOURCE_TAGS: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
+          BENCH_SOURCE_REVISION: ${{ github.sha }}
+          BENCH_DATE: ${{ github.event.head_commit.timestamp || '' }}
+          BENCH_RUN_METADATA: >-
+            {"ci":{"provider":"GitHub Actions","workflow":${{ toJson(github.workflow) }},"job":${{ toJson(github.job) }},"run_id":${{ toJson(github.run_id) }},"run_attempt":${{ github.run_attempt }},"event":${{ toJson(github.event_name) }},"runner_name":${{ toJson(runner.name) }},"run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}}
         run: |
           mkdir -p "$(dirname "$BENCH_DB_PATH")"
           julia --project=benchmark benchmark/runbench.jl
@@ -131,7 +137,7 @@ jobs:
                 "sha256": "${sha256}",
                 "size_bytes": ${size_bytes},
                 "packed_at": "${generated_at}",
-                "schema_version": 3,
+                "schema_version": 4,
                 "metadata_preview": {
                   "name": "${BENCH_PACKAGE_NAME}",
                   "project_url": "${BENCH_PACKAGE_URL}",
@@ -170,7 +176,7 @@ jobs:
       - name: Set up Julia
         uses: julia-actions/setup-julia@v2
         with:
-          version: "1"
+          version: "lts"
 
       - name: Cache Julia packages
         uses: julia-actions/cache@v2
@@ -209,9 +215,8 @@ jobs:
             commit="$(git -C "$HIST_WT" rev-parse HEAD)"
             date="$(git -C "$HIST_WT" show -s --format=%cI HEAD)"
 
-            GITHUB_REF_TYPE=tag \
-            GITHUB_REF_NAME="$tag" \
-            GITHUB_SHA="$commit" \
+            BENCH_SOURCE_TAGS="$tag" \
+            BENCH_SOURCE_REVISION="$commit" \
             BENCH_DATE="$date" \
             BENCH_TARGET_PATH="$HIST_WT" \
             BENCH_DB_PATH="$DB" \
