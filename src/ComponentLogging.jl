@@ -29,7 +29,8 @@ end
 
 function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info); sink=ConsoleLogger(Debug))
     rules = copy(rules)
-    return ComponentLogger(rules, sink, ReentrantLock(), minimum(values(rules)).level)
+    minlvl = Atomic{Int32}(minimum(values(rules)).level)
+    return ComponentLogger(rules, sink, ReentrantLock(), minlvl)
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
