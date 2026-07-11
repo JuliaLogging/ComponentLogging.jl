@@ -1,6 +1,6 @@
 module ComponentLogging
 using Logging
-using Threads: Atomic
+using Base.Threads: Atomic
 
 include("PlainLogger.jl")
 export PlainLogger

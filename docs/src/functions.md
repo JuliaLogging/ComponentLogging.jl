@@ -4,11 +4,11 @@ CurrentModule = ComponentLogging
 
 # Function API
 
-This page documents the **function-first** logging APIs exported by `ComponentLogging`.
-All functions require the logger to be passed explicitly as the first argument.
-In application code you will typically define *forwarding helpers* to avoid threading the logger manually.
+This page documents the function-based logging interface exported by `ComponentLogging`.
 
-When you already have a logger available (e.g. stored in a `const` or a `Ref`), calling `clog(logger, ...)` bypasses the task-local logger lookup performed by stdlib logging macros (`@info`, `@logmsg`, …) and can reduce overhead in hot paths.
+These functions take a logger explicitly as their first argument. In application code, `@forward_logger` can generate forwarding methods when repeatedly passing the same logger would be inconvenient.
+
+When a logger is already available, for example in a `const` or `Ref`, calling `clog(logger, ...)` avoids the module-registry lookup used by the logging macros and can reduce overhead in frequently executed code.
 
 ## Forwarding macro
 

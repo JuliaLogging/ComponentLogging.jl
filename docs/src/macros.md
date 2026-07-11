@@ -4,10 +4,9 @@ CurrentModule = ComponentLogging
 
 # Macros API
 
-This page documents the **macro-first** logging APIs exported by `ComponentLogging`.
+This page documents the logging macros exported by `ComponentLogging`.
 
-Macros work differently from functions. Macros do not take a logger as an argument; instead, you need to bind a key-value pair of `current module => logger` to the internal module registry of ComponentLogging.
-Subsequent macro calls do not require passing the logger; the logger for the current module is retrieved via a dictionary lookup.
+Unlike the function API, the macros do not take a logger explicitly. Instead, a logger is associated with a module in the internal module registry. Each macro call retrieves the logger bound to the calling module, falling back through its parent modules when necessary.
 
 You can use `set_module_logger` or `@bind_logger` in the `__init__` function to bind the logger to the current module.
 
