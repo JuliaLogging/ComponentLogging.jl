@@ -1,7 +1,7 @@
 {
   "manifest_version": 1,
   "benchledger_web_version": "0.5.2",
-  "generated_at": "2026-07-11T10:50:45.000Z",
+  "generated_at": "2026-07-11T12:46:02.000Z",
   "site": {
     "title": "ComponentLogging.jl BenchLedger",
     "description": "Benchmark history for ComponentLogging.jl"
@@ -12,9 +12,9 @@
       "name": "ComponentLogging.jl",
       "description": "Benchmark history for ComponentLogging.jl",
       "url": "./data/benchledger.sqlite",
-      "sha256": "6d09de213e32bbcded264c3a9e7939739770cb81facabd168822da48893f7101",
-      "size_bytes": 110592,
-      "packed_at": "2026-07-11T10:50:45.000Z",
+      "sha256": "f6ab7462f0fba2fdbd87332a96dab0712e8be161b865be5c1fc79690a2b47840",
+      "size_bytes": 323584,
+      "packed_at": "2026-07-11T12:46:02.000Z",
       "schema_version": 4,
       "metadata_preview": {
         "name": "ComponentLogging.jl",
