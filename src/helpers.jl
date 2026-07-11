@@ -17,10 +17,6 @@ clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, message...;
     _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
     clog(logger, group, Info, message...; _module, id, file, line, kwargs...)
 
-# clog(logger::AbstractLogger, level::Union{Integer,LogLevel}, message...;
-#     _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
-#     clog(logger, (DEFAULT_SYM,), level, message...; _module, id, file, line, kwargs...)
-
 ## clogenabled
 function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
     grp = _tokey(group)
@@ -30,9 +26,6 @@ end
 
 clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
     clogenabled(logger, group, Info)
-
-# clogenabled(logger::AbstractLogger, level::Union{Integer,LogLevel}) =
-#     clogenabled(logger, (DEFAULT_SYM,), level)
 
 ## clogf
 @inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F<:Function}
@@ -107,14 +100,17 @@ macro clog(args...)
 
     msg_tuple = Expr(:tuple, map(esc, msg_ps)...)
     mod, file, line = Base.CoreLogging.@_sourceinfo
+    id = Base.CoreLogging.log_record_id(mod, lvl_ex, Expr(:tuple, msg_ps...),
+        (Expr(:(=), :_group, grp_ast),))
     return :(
         let CL = ComponentLogging,
             _lg = ComponentLogging.get_logger($mod),
             _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
-            _grp = $grp_ast
+            _grp = $grp_ast,
+            _id = $(QuoteNode(id))
 
-            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=nothing)
-                CL.Logging.handle_message(_lg, _lvl, $msg_tuple, $mod, _grp, nothing, $file, $line)
+            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=_id)
+                CL.Logging.handle_message(_lg, _lvl, $msg_tuple, $mod, _grp, _id, $file, $line)
             end
             nothing
         end
@@ -158,29 +154,33 @@ macro clogf(args...)
             error("@clogf: group must be a literal Symbol like :core or a tuple of literal Symbols like (:a,:b)")
         end
         grp_ast = is_sym_lit(args[1]) ? Expr(:tuple, args[1]) : args[1]
-        n >= 3 || error("@clogf: with group, need (group, level, expr)")
+        n == 3 || error("@clogf: with group, need exactly (group, level, expr)")
         lvl_ex = args[2]
         body_ex = args[3]
     else
+        n == 2 || error("@clogf: need exactly (level, expr) or (group, level, expr)")
         lvl_ex = args[1]
         body_ex = args[2]
     end
 
     mod, file, line = Base.CoreLogging.@_sourceinfo
+    id = Base.CoreLogging.log_record_id(mod, lvl_ex, body_ex,
+        (Expr(:(=), :_group, grp_ast),))
     return :(
         let CL = ComponentLogging,
             _lg = ComponentLogging.get_logger($mod),
             _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
-            _grp = $grp_ast
+            _grp = $grp_ast,
+            _id = $(QuoteNode(id))
 
-            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=nothing)
+            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=_id)
                 _msg = $(esc(body_ex))
                 if _msg isa Function
                     _msg = _msg()
                 end
                 if _msg !== nothing
                     CL.Logging.handle_message(_lg, _lvl, CL.msg_to_tuple(_msg),
-                        $mod, _grp, nothing, $file, $line)
+                        $mod, _grp, _id, $file, $line)
                 end
             end
             nothing

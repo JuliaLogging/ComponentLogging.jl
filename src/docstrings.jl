@@ -33,12 +33,11 @@ A logger that delegates to an underlying sink (`AbstractLogger`) while applying
 component-based minimum level rules. Rules are defined on paths of symbols
 (`NTuple{N,Symbol}`). A lookup walks up the path and falls back to `(:__default__,)`.
 
+- `rules`: mapping from `NTuple{N,Symbol}` to `LogLevel`. If no explicit
+  `(:__default__,)` rule exists, lookup falls back to `Info`.
 - `sink`: the underlying `AbstractLogger` that actually handles messages.
-- `rules`: mapping from `NTuple{N,Symbol}` to `LogLevel`. The default entry
-  `((DEFAULT_SYM,), Info)` is created automatically when needed.
-
-The effective minimum level is the minimum of all values in `rules`, cached in
-the `min` field for fast checks.
+- `lock`: protects concurrent access to `rules`.
+- `min_level`: atomic cache of the minimum value in `rules` for fast checks.
 """
 ComponentLogger
 
@@ -49,15 +48,17 @@ Set or update the minimum level for a specific component `group` on `logger`.
 `group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel` or `Integer`.
 If `lvl` is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and
 `false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
-Updates the internal `min` cache appropriately.
+Updates `rules` under `logger.lock` and keeps the atomic `min_level` cache consistent.
 """
 set_log_level!
 
 """
     with_min_level(f, logger, lvl)
 
-Temporarily set `logger.min` to `lvl` while executing `f()`, restoring the
-original value afterward even if an exception is thrown.
+Temporarily override the minimum enabled level for the current task while
+executing `f()`. The override is task-local, so it does not modify `logger.min_level`
+or affect other concurrent tasks. Nested overrides are restored correctly, including
+when `f()` throws an exception.
 """
 with_min_level
 
@@ -232,8 +233,8 @@ clogf(:core, 0) do
 end
 set_log_level(:core, 1000)
 with_min_level(2000) do
-    # Temporarily raise the global minimum level (fast early rejection).
-    clog(:core, 0, "suppressed by global min")
+    # Temporarily raise the current task's minimum level (fast early rejection).
+    clog(:core, 0, "suppressed by the task-local minimum")
 end
 ```
 

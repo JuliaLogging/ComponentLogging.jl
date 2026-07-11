@@ -1,5 +1,6 @@
 module ComponentLogging
 using Logging
+using Threads: Atomic
 
 include("PlainLogger.jl")
 export PlainLogger
@@ -19,14 +20,16 @@ msg_to_tuple(x::Tuple) = x
 msg_to_tuple(x) = (x,)
 
 ## ComponentLogger
-mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
-    const rules::Dict{RuleKey,LogLevel}
-    const sink::L
-    min::LogLevel
+struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
+    rules::Dict{RuleKey,LogLevel}
+    sink::L
+    lock::ReentrantLock
+    min_level::Atomic{Int32}
 end
 
 function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info); sink=ConsoleLogger(Debug))
-    return ComponentLogger(rules, sink, minimum(values(rules)))
+    rules = copy(rules)
+    return ComponentLogger(rules, sink, ReentrantLock(), minimum(values(rules)).level)
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
@@ -43,12 +46,18 @@ end
 function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLevel})
     grp = _tokey(group)
     lv = LogLevel(lvl)
-    old = get(logger.rules, grp, nothing)
-    logger.rules[grp] = lv
-    if lv < logger.min
-        logger.min = lv
-    elseif old !== nothing && old === logger.min && lv > logger.min
-        logger.min = minimum(values(logger.rules))
+    @lock logger.lock begin
+        old = get(logger.rules, grp, nothing)
+        minlvl = LogLevel(logger.min_level[])
+        if lv < minlvl
+            logger.min_level[] = lv.level
+            logger.rules[grp] = lv
+        else
+            logger.rules[grp] = lv
+            if old !== nothing && old === minlvl && lv > minlvl
+                logger.min_level[] = minimum(values(logger.rules)).level
+            end
+        end
     end
     return logger
 end
@@ -56,16 +65,9 @@ end
 set_log_level!(logger::ComponentLogger, group, on::Bool) =
     set_log_level!(logger, group, on ? 0 : 1)
 
-"Temporarily set the minimum level within a do-block; restore afterward even if an exception is thrown; no lock"
-function with_min_level(f::Function, logger::ComponentLogger, lvl::Union{Integer,LogLevel})
-    old_lvl = logger.min
-    logger.min = LogLevel(lvl)
-    try
-        f()
-    finally
-        logger.min = old_lvl
-    end
-end
+"Temporarily set the minimum level for the current task within a do-block; restore afterward even if an exception is thrown"
+with_min_level(f::Function, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) =
+    task_local_storage(f, logger, LogLevel(lvl))
 
 @inline function _effective_level(rules::Dict{RuleKey,LogLevel}, group::Union{Symbol,RuleKey})::LogLevel
     path = _tokey(group) #::NTuple{N,Symbol}
@@ -92,32 +94,33 @@ end
     end
 end
 
-Logging.min_enabled_level(g::ComponentLogger) = g.min
+function Logging.min_enabled_level(g::ComponentLogger)::LogLevel
+    lvl = get(task_local_storage(), g, nothing)::Union{Nothing,LogLevel}
+    return lvl === nothing ? LogLevel(g.min_level[]) : lvl
+end
 
 Logging.shouldlog(g::ComponentLogger, level, _module, group, id) =
-    level >= _effective_level(g.rules, group)
+    @lock g.lock level >= _effective_level(g.rules, group)
 
 Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...) =
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)
 
 ## Module registry
-const _REGISTRY_LOCK = ReentrantLock()
-const _REGISTRY = IdDict{Module,AbstractLogger}()
+const _RegistryLock = ReentrantLock()
+const _Registry = IdDict{Module,AbstractLogger}()
 
 function set_module_logger(mod::Module, logger::AbstractLogger)::String
-    lock(_REGISTRY_LOCK) do
-        _REGISTRY[mod] = logger
-    end
+    @lock _RegistryLock _Registry[mod] = logger
     string(mod) * " <- " * string(typeof(logger))
 end
 
 "Get the logger for the calling module; if unbound, fallback through parent modules; error at the top"
 function get_logger(mod::Module)
-    lock(_REGISTRY_LOCK) do
+    @lock _RegistryLock begin
         m = mod
         while true
-            if haskey(_REGISTRY, m)
-                return _REGISTRY[m]
+            if haskey(_Registry, m)
+                return _Registry[m]
             end
             pm = parentmodule(m)
             if pm === m   # reached the top (e.g. Base/Core/Main)
@@ -268,14 +271,15 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
 end
 
 function Base.show(io::IO, ::MIME"text/plain", logger::ComponentLogger)
+    rules, minlvl = @lock logger.lock (copy(logger.rules), LogLevel(logger.min_level[]))
     println(io, "ComponentLogger")
     print(io, " sink:\t")
     println(io, nameof(typeof(logger.sink)))
     print(io, " min:\t")
-    _print_level(io, logger.min)
+    _print_level(io, minlvl)
     println(io)
-    println(io, " rules:\t", length(logger.rules))
-    _print_tree(io, logger.rules)
+    println(io, " rules:\t", length(rules))
+    _print_tree(io, rules)
 end
 
 include("helpers.jl")
