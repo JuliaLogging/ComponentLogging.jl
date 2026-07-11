@@ -6,6 +6,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-11
+### Added
+- Added thread-safe updates for component-specific log levels.
+- Added task-local minimum-level overrides with `with_min_level`, so temporary changes no longer affect unrelated concurrent tasks.
+- Added stable log record IDs for `@clog` and `@clogf`.
+
+### Changed
+- Improved `ComponentLogger` for safer and faster use in multithreaded applications.
+- Updated `@clogf` to reject invalid argument counts instead of silently ignoring extra arguments.
+- Removed unused group-less `clog` and `clogenabled` overloads.
+- Updated documentation and tests for the revised concurrency behavior.
+
+### Fixed
+- Fixed data races in concurrent rule updates and minimum-level checks.
+
 ## [0.1.6] - 2026-01-19
 ### Changed
 - PlainLogger now uses keyword defaults via `@kwdef`.
