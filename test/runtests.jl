@@ -38,6 +38,11 @@ end
         @test (@clogenabled :core Debug) == false
     end
 
+    @testset "function API requires group" begin
+        @test_throws MethodError clog(logger, Info, "missing group")
+        @test_throws MethodError clogenabled(logger, Info)
+    end
+
     @testset "clog emits when enabled" begin
         clearbuf!()
         # Enabled for :core at Warn
@@ -87,12 +92,41 @@ end
         @test !isempty(String(take!(buf)))
     end
 
-    @testset "set_log_level! affects min" begin
-        # Construct a standalone logger and adjust levels
-        local logger = ComponentLogger(Dict{Nothing,Nothing}(); sink)
+    @testset "set_log_level! updates min_level cache" begin
+        # Construct a standalone logger and exercise both lowering and raising the cache
+        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
         @test Logging.min_enabled_level(logger) === Info
-        ComponentLogging.set_log_level!(logger, (:foo,), Debug)
+        @test logger.min_level[] == Info.level
+
+        ComponentLogging.set_log_level!(logger, :foo, Debug)
+        ComponentLogging.set_log_level!(logger, :bar, Debug)
         @test Logging.min_enabled_level(logger) === Debug
+        @test logger.min_level[] == Debug.level
+
+        ComponentLogging.set_log_level!(logger, :foo, Error)
+        @test Logging.min_enabled_level(logger) === Debug
+        @test logger.min_level[] == Debug.level
+
+        ComponentLogging.set_log_level!(logger, :bar, Error)
+        @test Logging.min_enabled_level(logger) === Info
+        @test logger.min_level[] == Info.level
+    end
+
+    @testset "concurrent rule updates" begin
+        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
+        groups = [Symbol("group", string(i)) for i in 1:32]
+
+        @sync for group in groups
+            Threads.@spawn ComponentLogging.set_log_level!(logger, group, Debug)
+        end
+        @test Logging.min_enabled_level(logger) === Debug
+        @test all(group -> clogenabled(logger, group, Debug), groups)
+
+        @sync for group in groups
+            Threads.@spawn ComponentLogging.set_log_level!(logger, group, Error)
+        end
+        @test Logging.min_enabled_level(logger) === Info
+        @test all(group -> !clogenabled(logger, group, Debug), groups)
     end
 
     @testset "set_log_level! Bool switch" begin
@@ -150,11 +184,50 @@ end
         ForwardLoggerTest.set_log_level(:core, 0)
         @test ForwardLoggerTest.clogenabled(:core, 0) == true
 
-        oldmin = ForwardLoggerTest.logger_ref[].min
+        logger = ForwardLoggerTest.logger_ref[]
+        oldmin = Logging.min_enabled_level(logger)
+        cached_min = logger.min_level[]
+
         ForwardLoggerTest.with_min_level(2000) do
-            @test ForwardLoggerTest.logger_ref[].min == LogLevel(2000)
+            @test Logging.min_enabled_level(logger) === Error
+            @test ForwardLoggerTest.clogenabled(:core, 0) == false
+            @test logger.min_level[] == cached_min
+
+            ForwardLoggerTest.with_min_level(1000) do
+                @test Logging.min_enabled_level(logger) === Warn
+            end
+            @test Logging.min_enabled_level(logger) === Error
         end
-        @test ForwardLoggerTest.logger_ref[].min == oldmin
+        @test Logging.min_enabled_level(logger) === oldmin
+        @test logger.min_level[] == cached_min
+        @test ForwardLoggerTest.clogenabled(:core, 0) == true
+
+        @test_throws ErrorException ForwardLoggerTest.with_min_level(2000) do
+            error("test restoration after exception")
+        end
+        @test Logging.min_enabled_level(logger) === oldmin
+
+        entered = Channel{Tuple{LogLevel,Bool}}(1)
+        release = Channel{Nothing}(1)
+        task = @async ForwardLoggerTest.with_min_level(2000) do
+            put!(entered, (
+                Logging.min_enabled_level(logger),
+                ForwardLoggerTest.clogenabled(:core, 0),
+            ))
+            take!(release)
+        end
+        status = timedwait(() -> isready(entered) || istaskdone(task), 5)
+        status === :ok || error("task-local isolation test did not reach its synchronization point")
+        if istaskdone(task) && !isready(entered)
+            fetch(task)
+        end
+        task_min, task_enabled = take!(entered)
+        @test task_min === Error
+        @test task_enabled == false
+        @test Logging.min_enabled_level(logger) === oldmin
+        @test ForwardLoggerTest.clogenabled(:core, 0) == true
+        put!(release, nothing)
+        wait(task)
 
         ForwardLoggerTest2.clog(:core, 0, "independent")
         @test occursin("independent", String(take!(ForwardLoggerTest2.buf)))
