@@ -1,239 +1,346 @@
 name: Benchmarks
 
+env:
+  BENCHLEDGER_VERSION: "0.6.0"
+  TARGET_REPOSITORY: ""
+  TARGET_REF: ""
+  BENCH_DB_BRANCH: "gh-pages"
+  BENCH_DB_FILE: "benchmarks/data/benchledger.sqlite"
+
 on:
+  workflow_call:
   workflow_dispatch:
     inputs:
-      backfill:
-        description: "Backfill historical benchmark data"
+      target_mode:
+        description: "Target selection mode"
         required: true
-        default: "false"
+        default: current
+        type: choice
+        options: [current, ref, tags]
+      target_repository:
+        description: "Target repository as owner/repo; leave empty for this repository"
+        required: false
+        default: ""
+        type: string
+      target_ref:
+        description: "Optional commit, tag, or branch when target_mode=ref; empty uses the repository default branch"
+        required: false
+        default: ""
+        type: string
+      tag_pattern:
+        description: "Git tag pattern when target_mode=tags"
+        required: false
+        default: "*"
+        type: string
+      tag_start:
+        description: "Optional first tag to benchmark, inclusive"
+        required: false
+        default: ""
+        type: string
+      tag_end:
+        description: "Optional last tag to benchmark, inclusive"
+        required: false
+        default: ""
+        type: string
   push:
-    branches:
-      - &benchmark_branch master
-    tags:
-      - "v*"
+    branches: [master]
+    tags: ["v*"]
 
 permissions:
   contents: write
 
 concurrency:
-  group: benchledger-pages
+  group: benchledger-database
   cancel-in-progress: false
 
-env:
-  BENCHLEDGER_VERSION: "0.5.3"
-  BENCH_PACKAGE_NAME: "ComponentLogging.jl"
-  BENCH_PACKAGE_DESCRIPTION: "Benchmark history for ComponentLogging.jl"
-  BENCH_PACKAGE_URL: "https://github.com/JuliaLogging/ComponentLogging.jl"
-  BENCH_SOURCE_BRANCH: *benchmark_branch
-
 jobs:
-  build-and-publish:
-    if: github.event_name != 'workflow_dispatch' || inputs.backfill != 'true'
+  benchmark:
     name: Ubuntu 24.04 - x64
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    timeout-minutes: 360
 
     steps:
-      - name: Check out source
+      - name: Check out benchmark harness
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Check out Pages branch
-        uses: actions/checkout@v6
-        with:
-          ref: gh-pages
-          path: gh-pages
-          fetch-depth: 1
-
-      - name: Set up Julia
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "lts"
-
-      - name: Cache Julia packages
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate benchmark project
-        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Run benchmarks into benchmark database
+      - name: Prepare database branch
         env:
-          BENCH_DB_IN_CURRENT_BRANCH: false
-          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchmarks/data/benchledger.sqlite
-          # BENCH_DB_PATH: ${{ github.workspace }}/benchmark/benchledger.sqlite (if database is not in page deploy branch)
-          BENCH_NOTES: "GitHub Actions BenchLedger run"
-          BENCH_SOURCE_BRANCH: ${{ github.ref_type == 'branch' && github.ref_name || '' }}
-          BENCH_SOURCE_TAGS: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
-          BENCH_SOURCE_REVISION: ${{ github.sha }}
-          BENCH_DATE: ${{ github.event.head_commit.timestamp || '' }}
-          BENCH_RUN_METADATA: >-
-            {"ci":{"provider":"GitHub Actions","workflow":${{ toJson(github.workflow) }},"job":${{ toJson(github.job) }},"run_id":${{ toJson(github.run_id) }},"run_attempt":${{ github.run_attempt }},"event":${{ toJson(github.event_name) }},"runner_name":${{ toJson(runner.name) }},"run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"}}
-        run: |
-          mkdir -p "$(dirname "$BENCH_DB_PATH")"
-          julia --project=benchmark benchmark/runbench.jl
-
-      - name: Checkpoint benchmark database
-        env:
-          BENCH_DB_PATH: ${{ github.workspace }}/gh-pages/benchmarks/data/benchledger.sqlite
-          # BENCH_DB_PATH: ${{ github.workspace }}/benchmark/benchledger.sqlite (if database is not in page deploy branch)
-        run: |
-          julia --project=benchmark -e 'using SQLite; db = SQLite.DB(ENV["BENCH_DB_PATH"]); SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"); close(db)'
-          rm -f "${BENCH_DB_PATH}-wal" "${BENCH_DB_PATH}-shm"
-
-      - name: Download BenchLedger web release
-        run: |
-          url="https://github.com/abcdvvvv/BenchLedger/releases/download/v${BENCHLEDGER_VERSION}/BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
-          curl -fsSL "$url" -o /tmp/benchledger-dist.tar.gz
-          rm -rf /tmp/benchledger-dist
-          mkdir -p /tmp/benchledger-dist
-          tar -xzf /tmp/benchledger-dist.tar.gz -C /tmp/benchledger-dist
-
-      - name: Install BenchLedger viewer
-        run: |
-          mkdir -p gh-pages/benchmarks/data
-          find gh-pages/benchmarks -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
-          cp -a /tmp/benchledger-dist/. gh-pages/benchmarks/
-
-      # - name: Commit source database and copy to Pages tree
-      #   run: |
-      #     git config user.name "github-actions[bot]"
-      #     git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-      #     git add ${{ github.workspace }}/benchmark/benchledger.sqlite
-      #     if git diff --cached --quiet; then
-      #       echo "No benchmark database changes on source branch."
-      #     else
-      #       git commit -m "Update benchmark database [skip ci]"
-      #       git push
-      #     fi
-
-      #     mkdir -p gh-pages/benchmarks/data
-      #     cp "${{ github.workspace }}/benchmark/benchledger.sqlite" "${{ github.workspace }}/gh-pages/benchmarks/data/benchledger.sqlite"
-
-      - name: Generate BenchLedger manifest
-        run: |
-          db="gh-pages/benchmarks/data/benchledger.sqlite"
-          generated_at="$(date -u +'%Y-%m-%dT%H:%M:%S.000Z')"
-          sha256="$(sha256sum "$db" | cut -d' ' -f1)"
-          size_bytes="$(stat -c '%s' "$db")"
-
-          cat > gh-pages/benchmarks/benchledger.json <<EOF
-          {
-            "manifest_version": 1,
-            "benchledger_web_version": "${BENCHLEDGER_VERSION}",
-            "generated_at": "${generated_at}",
-            "site": {
-              "title": "${BENCH_PACKAGE_NAME} BenchLedger",
-              "description": "${BENCH_PACKAGE_DESCRIPTION}"
-            },
-            "databases": [
-              {
-                "id": "${BENCH_PACKAGE_NAME}",
-                "name": "${BENCH_PACKAGE_NAME}",
-                "description": "${BENCH_PACKAGE_DESCRIPTION}",
-                "url": "./data/benchledger.sqlite",
-                "sha256": "${sha256}",
-                "size_bytes": ${size_bytes},
-                "packed_at": "${generated_at}",
-                "schema_version": 4,
-                "metadata_preview": {
-                  "name": "${BENCH_PACKAGE_NAME}",
-                  "project_url": "${BENCH_PACKAGE_URL}",
-                  "logo_url": null
-                }
-              }
-            ]
-          }
-          EOF
-
-      - name: Publish BenchLedger page
-        working-directory: gh-pages
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add benchmarks
-
-          if git diff --cached --quiet; then
-            echo "No benchmarks page changes to publish."
-          else
-            git commit -m "Update BenchLedger benchmark page"
-            git push origin HEAD:gh-pages
-          fi
-
-  backfill-benchmarks:
-    if: github.event_name == 'workflow_dispatch' && inputs.backfill == 'true'
-    runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-    steps:
-      - name: Check out source
-        uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
-
-      - name: Set up Julia
-        uses: julia-actions/setup-julia@v2
-        with:
-          version: "lts"
-
-      - name: Cache Julia packages
-        uses: julia-actions/cache@v2
-
-      - name: Instantiate benchmark project
-        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-
-      - name: Backfill historical benchmark database
+          REPO_URL: https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git
         run: |
           set -euo pipefail
 
-          REPO="$(git rev-parse --show-toplevel)"
-          REPO_NAME="$(basename "$REPO")"
+          mkdir -p .benchledger-db
+          git -C .benchledger-db init
+          git -C .benchledger-db remote add origin "$REPO_URL"
 
-          PAGES_WT="/tmp/${REPO_NAME}-pages"
-          HIST_WT="/tmp/${REPO_NAME}-history"
-          DB="$PAGES_WT/benchmarks/data/benchledger.sqlite"
-
-          # Pages branch worktree: stores the benchmark database.
-          if ! git -C "$PAGES_WT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-            rm -rf "$PAGES_WT"
-            git -C "$REPO" worktree add "$PAGES_WT" gh-pages
+          if git ls-remote --exit-code --heads "$REPO_URL" "$BENCH_DB_BRANCH" >/dev/null 2>&1; then
+            git -C .benchledger-db fetch --depth=1 origin "$BENCH_DB_BRANCH"
+            git -C .benchledger-db checkout -B "$BENCH_DB_BRANCH" FETCH_HEAD
+          else
+            git -C .benchledger-db checkout --orphan "$BENCH_DB_BRANCH"
           fi
 
-          # Historical source worktree: checked out to each old tag.
-          rm -rf "$HIST_WT"
-          git -C "$REPO" worktree add --detach "$HIST_WT" HEAD
+      - name: Check out selected target
+        if: (github.event_name == 'workflow_dispatch' && inputs.target_mode != 'current') || (github.event_name != 'workflow_dispatch' && env.TARGET_REPOSITORY != '')
+        uses: actions/checkout@v6
+        with:
+          repository: ${{ github.event_name == 'workflow_dispatch' && inputs.target_repository != '' && inputs.target_repository || github.event_name != 'workflow_dispatch' && env.TARGET_REPOSITORY != '' && env.TARGET_REPOSITORY || github.repository }}
+          ref: ${{ github.event_name != 'workflow_dispatch' && env.TARGET_REF || inputs.target_ref }}
+          path: .bench-target
+          fetch-depth: 0
 
+      - name: Resolve target branch provenance
+        id: target_provenance
+        env:
+          TARGET_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target_mode || env.TARGET_REPOSITORY != '' && 'ref' || 'current' }}
+          REQUESTED_REF: ${{ github.event_name != 'workflow_dispatch' && env.TARGET_REF || inputs.target_ref }}
+          CURRENT_REF: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "$TARGET_MODE" = "tags" ]; then
+            echo "branch=" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if [ "$TARGET_MODE" = "current" ]; then
+            TARGET_DIR="$GITHUB_WORKSPACE"
+          else
+            TARGET_DIR="$GITHUB_WORKSPACE/.bench-target"
+          fi
+
+          if [ "$TARGET_MODE" = "current" ]; then
+            requested_ref="$CURRENT_REF"
+          else
+            requested_ref="$REQUESTED_REF"
+          fi
+
+          if [ -z "$requested_ref" ]; then
+            requested_ref="$(git -C "$TARGET_DIR" ls-remote --symref origin HEAD 2>/dev/null | awk '/^ref:/ {sub("refs/heads/", "", $2); print $2; exit}' || true)"
+          fi
+
+          tag="$(git -C "$TARGET_DIR" tag --points-at HEAD | head -n 1 || true)"
+          branch=""
+
+          # actions/checkout commonly leaves detached HEAD, so prefer the requested ref when it is a branch.
+          if [ -n "$requested_ref" ] && git -C "$TARGET_DIR" show-ref --verify --quiet "refs/remotes/origin/$requested_ref"; then
+            branch="$requested_ref"
+          elif [ -n "$requested_ref" ] && git -C "$TARGET_DIR" show-ref --verify --quiet "refs/heads/$requested_ref"; then
+            branch="$requested_ref"
+          else
+            branch="$(git -C "$TARGET_DIR" branch --show-current || true)"
+          fi
+
+          if [ -n "$tag" ]; then
+            branch=""
+          fi
+
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Julia
+        uses: julia-actions/setup-julia@v2
+        with:
+          version: "lts"
+
+      - name: Cache Julia packages
+        uses: julia-actions/cache@v2
+
+      - name: Instantiate benchmark project
+        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
+
+      - name: Run benchmarks
+        env:
+          TARGET_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target_mode || env.TARGET_REPOSITORY != '' && 'ref' || 'current' }}
+          TARGET_REF: ${{ github.event_name != 'workflow_dispatch' && env.TARGET_REF || inputs.target_ref }}
+          TAG_PATTERN: ${{ inputs.tag_pattern || '*' }}
+          TAG_START: ${{ inputs.tag_start || '' }}
+          TAG_END: ${{ inputs.tag_end || '' }}
+          BENCH_RUN: >-
+            {"notes":"GitHub Actions BenchLedger run","metadata":{"ci":{"provider":"GitHub Actions","workflow":${{ toJson(github.workflow) }},"job":${{ toJson(github.job) }},"run_id":${{ toJson(github.run_id) }},"run_attempt":${{ github.run_attempt }},"event":${{ toJson(github.event_name) }},"runner_name":${{ toJson(runner.name) }},"run_url":"${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}","target_mode":${{ toJson(github.event_name == 'workflow_dispatch' && inputs.target_mode || env.TARGET_REPOSITORY != '' && 'ref' || 'current') }},"target_ref":${{ toJson(github.event_name != 'workflow_dispatch' && env.TARGET_REF || inputs.target_ref) }}},"source":{"repository":${{ toJson(github.event_name == 'workflow_dispatch' && inputs.target_repository != '' && inputs.target_repository || github.event_name != 'workflow_dispatch' && env.TARGET_REPOSITORY != '' && env.TARGET_REPOSITORY || github.repository) }},"branch":${{ toJson(steps.target_provenance.outputs.branch) }}}}}
+        run: |
+          set -euo pipefail
+
+          DB="$GITHUB_WORKSPACE/.benchledger-db/$BENCH_DB_FILE"
+          TARGET="$GITHUB_WORKSPACE/.bench-target"
           mkdir -p "$(dirname "$DB")"
 
-          for tag in $(git -C "$REPO" tag --sort=v:refname); do
-            echo "Backfilling benchmark for $tag"
+          run_current() {
+            BENCH_DB_PATH="$DB" julia --project=benchmark benchmark/runbench.jl
+          }
 
-            git -C "$HIST_WT" checkout --detach "$tag"
+          run_target() {
+            BENCH_DB_PATH="$DB" BENCH_TARGET_PATH="$TARGET" julia --project=benchmark benchmark/runbench.jl
+          }
 
-            commit="$(git -C "$HIST_WT" rev-parse HEAD)"
-            date="$(git -C "$HIST_WT" show -s --format=%cI HEAD)"
-
-            BENCH_SOURCE_TAGS="$tag" \
-            BENCH_SOURCE_REVISION="$commit" \
-            BENCH_DATE="$date" \
-            BENCH_TARGET_PATH="$HIST_WT" \
-            BENCH_DB_PATH="$DB" \
-            BENCH_DB_IN_CURRENT_BRANCH=false \
-            BENCH_NOTES="Backfilled with current benchmark suite against $tag" \
-            julia --project="$REPO/benchmark" "$REPO/benchmark/runbench.jl"
-          done
-
-          git -C "$PAGES_WT" config user.name "github-actions[bot]"
-          git -C "$PAGES_WT" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git -C "$PAGES_WT" add benchmarks/data/benchledger.sqlite
-          if git -C "$PAGES_WT" diff --cached --quiet; then
-            echo "No benchmark database changes."
-          else
-            git -C "$PAGES_WT" commit -m "Backfill benchmark database"
-            git -C "$PAGES_WT" push origin HEAD:gh-pages
+          if [ "$TARGET_MODE" = "current" ]; then
+            run_current
+            exit 0
           fi
 
-          git -C "$REPO" worktree remove "$HIST_WT"
+          if [ "$TARGET_MODE" = "ref" ]; then
+            run_target
+            exit 0
+          fi
+
+          mapfile -t TAGS < <(git -C "$TARGET" tag --list "$TAG_PATTERN" --sort=v:refname)
+          [ "${#TAGS[@]}" -gt 0 ] || { echo "No tags match pattern: $TAG_PATTERN" >&2; exit 1; }
+
+          SELECTED=()
+          STARTED=false
+          [ -z "$TAG_START" ] && STARTED=true
+          FOUND_START=false
+          FOUND_END=false
+
+          for tag in "${TAGS[@]}"; do
+            if [ "$STARTED" = false ]; then
+              [ "$tag" = "$TAG_START" ] || continue
+              STARTED=true
+              FOUND_START=true
+            fi
+
+            SELECTED+=("$tag")
+            if [ -n "$TAG_END" ] && [ "$tag" = "$TAG_END" ]; then
+              FOUND_END=true
+              break
+            fi
+          done
+
+          [ -z "$TAG_START" ] || [ "$FOUND_START" = true ] || { echo "tag_start not found after applying tag_pattern: $TAG_START" >&2; exit 1; }
+          [ -z "$TAG_END" ] || [ "$FOUND_END" = true ] || { echo "tag_end not found at or after tag_start: $TAG_END" >&2; exit 1; }
+          [ "${#SELECTED[@]}" -gt 0 ] || { echo "The selected tag range is empty." >&2; exit 1; }
+
+          printf 'Benchmarking %d tag(s):\n' "${#SELECTED[@]}"
+          printf '  %s\n' "${SELECTED[@]}"
+
+          FAILURE_LOG="$RUNNER_TEMP/benchledger-tag-failures.txt"
+          success_count=0
+          failure_count=0
+          : > "$FAILURE_LOG"
+
+          for tag in "${SELECTED[@]}"; do
+            echo "Benchmarking $tag"
+            git -C "$TARGET" checkout --detach "$tag"
+
+            commit="$(git -C "$TARGET" rev-parse HEAD)"
+            commit_timestamp="$(git -C "$TARGET" show -s --format=%ct HEAD)"
+            code_date="$(date -u -d "@$commit_timestamp" '+%Y-%m-%dT%H:%M:%S.000Z')"
+
+            if run_target; then
+              success_count=$((success_count + 1))
+              echo "Benchmark succeeded for $tag"
+            else
+              failure_count=$((failure_count + 1))
+              echo "Benchmark failed for $tag, skipping to next tag."
+              printf 'tag=%s commit=%s code_date=%s\n' "$tag" "$commit" "$code_date" >> "$FAILURE_LOG"
+            fi
+          done
+
+          if [ "$failure_count" -gt 0 ]; then
+            {
+              echo "## BenchLedger skipped failed tags"
+              echo
+              echo "Successful tags: $success_count"
+              echo "Failed tags: $failure_count"
+              echo
+              echo '```'
+              cat "$FAILURE_LOG"
+              echo '```'
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+          if [ "$success_count" -eq 0 ]; then
+            echo "Tag benchmark did not produce any successful benchmark runs." >&2
+            exit 1
+          fi
+
+      - name: Checkpoint benchmark database
+        run: |
+          DB="$GITHUB_WORKSPACE/.benchledger-db/$BENCH_DB_FILE"
+          julia --project=benchmark -e 'using SQLite; db = SQLite.DB(ARGS[1]); SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"); close(db)' "$DB"
+          rm -f "${DB}-wal" "${DB}-shm"
+
+      - name: Install BenchLedger viewer
+        if: env.BENCH_DB_BRANCH == 'gh-pages'
+        run: |
+          url="https://github.com/abcdvvvv/BenchLedger/releases/download/v${BENCHLEDGER_VERSION}/BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
+          curl -fsSL "$url" -o /tmp/benchledger-dist.tar.gz
+          rm -rf /tmp/benchledger-dist && mkdir -p /tmp/benchledger-dist
+          tar -xzf /tmp/benchledger-dist.tar.gz -C /tmp/benchledger-dist
+          mkdir -p .benchledger-db/benchmarks/data
+          find .benchledger-db/benchmarks -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
+          cp -a /tmp/benchledger-dist/. .benchledger-db/benchmarks/
+          touch .benchledger-db/.nojekyll
+
+      - name: Generate BenchLedger manifest
+        if: env.BENCH_DB_BRANCH == 'gh-pages'
+        run: |
+          python3 - "$GITHUB_WORKSPACE/.benchledger-db/$BENCH_DB_FILE" ".benchledger-db/benchmarks/benchledger.json" "$BENCHLEDGER_VERSION" <<'PY'
+          import hashlib
+          import json
+          import os
+          import sqlite3
+          import sys
+          from datetime import datetime, timezone
+
+          db_path, manifest_path, web_version = sys.argv[1:]
+          with sqlite3.connect(db_path) as db:
+              metadata = dict(db.execute("SELECT key, value FROM benchledger_metadata"))
+
+          name = metadata.get("name", "BenchLedger")
+          description = metadata.get("description", "")
+          project_url = metadata.get("project_url") or None
+          logo_url = metadata.get("logo_url") or None
+          schema_version = int(metadata["schema_version"])
+          generated_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
+
+          with open(db_path, "rb") as source:
+              sha256 = hashlib.file_digest(source, "sha256").hexdigest()
+
+          manifest_dir = os.path.dirname(os.path.abspath(manifest_path))
+          db_url = os.path.relpath(os.path.abspath(db_path), manifest_dir).replace(os.sep, "/")
+          if not db_url.startswith("."):
+              db_url = "./" + db_url
+
+          manifest = {
+              "manifest_version": 1,
+              "benchledger_web_version": web_version,
+              "generated_at": generated_at,
+              "site": {"title": f"{name} BenchLedger", "description": description},
+              "databases": [{
+                  "id": name,
+                  "name": name,
+                  "description": description,
+                  "url": db_url,
+                  "sha256": sha256,
+                  "size_bytes": os.path.getsize(db_path),
+                  "packed_at": generated_at,
+                  "schema_version": schema_version,
+                  "metadata_preview": {
+                      "name": name,
+                      "project_url": project_url,
+                      "logo_url": logo_url,
+                  },
+              }],
+          }
+
+          with open(manifest_path, "w", encoding="utf-8") as target:
+              json.dump(manifest, target, indent=2, ensure_ascii=False)
+              target.write("\n")
+          PY
+
+      - name: Commit benchmark database
+        working-directory: .benchledger-db
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -- "$BENCH_DB_FILE"
+          [ "$BENCH_DB_BRANCH" != "gh-pages" ] || git add -- benchmarks .nojekyll
+
+          if git diff --cached --quiet; then
+            echo "No benchmark database changes."
+          else
+            git commit -m "Update BenchLedger benchmark data [skip ci]"
+            git push origin "HEAD:$BENCH_DB_BRANCH"
+          fi
