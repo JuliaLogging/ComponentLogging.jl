@@ -1,7 +1,7 @@
 name: Benchmarks
 
 env:
-  BENCHLEDGER_VERSION: "0.6.0"
+  BENCHLEDGER_VERSION: "0.6.1"
   TARGET_REPOSITORY: ""
   TARGET_REF: ""
   BENCH_DB_BRANCH: "gh-pages"
