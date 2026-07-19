@@ -61,9 +61,7 @@ function detect_tags(is_git::Bool)
     isempty(tags) ? String[] : split(tags, '\n'; keepempty=false)
 end
 
-function detect_commit(is_git::Bool)
-    is_git ? readchomp(`git -C $Target_Package_Path rev-parse HEAD`) : ""
-end
+detect_commit(is_git::Bool) = is_git ? readchomp(`git -C $Target_Package_Path rev-parse HEAD`) : ""
 
 function detect_code_date(is_git::Bool)
     is_git || return iso_utc_now()
@@ -210,7 +208,7 @@ function detect_gpu_interface()
         !isempty(version) && (interface["version"] = version)
         return interface
     end
-    Dict{String,Any}()
+    return Dict{String,Any}()
 end
 
 function detect_gpu_runtime(nvidia_driver_version::AbstractString)
@@ -238,7 +236,7 @@ function detect_gpu_runtime(nvidia_driver_version::AbstractString)
         runtime["driver"] = Dict{String,Any}("version" => String(nvidia_driver_version))
     end
 
-    runtime
+    return runtime
 end
 
 function normalize_code_state_id(value::AbstractString)
@@ -274,7 +272,7 @@ function merge_metadata!(metadata::AbstractDict, override::AbstractDict; path::A
             error("Conflicting metadata value at $(key_path): existing=$(repr(metadata[key_string])), new=$(repr(value)).")
         end
     end
-    metadata
+    return metadata
 end
 
 function parse_object_env(name::AbstractString)
@@ -319,7 +317,7 @@ function canonical_json(value)
     end
 end
 
-function make_source_context(measured_at::AbstractString)
+function make_source_context()
     is_git = is_git_repository()
     branch = detect_branch(is_git)
     tags = detect_tags(is_git)
@@ -441,68 +439,64 @@ end
 function create_latest_view_v5!(db)
     SQLite.execute(db,
         """
-CREATE VIEW IF NOT EXISTS benchmark_results_latest AS
-SELECT
-    run_id,
-    code_state_id,
-    environment_id,
-    code_label,
-    environment_label,
-    code_date,
-    measured_at,
-    notes,
-    code_state_identity,
-    code_state_metadata,
-    environment_identity,
-    environment_metadata,
-    run_metadata,
-    benchmark_path,
-    benchmark_id,
-    benchmark_label,
-    metric_name,
-    statistic,
-    unit,
-    value,
-    better
-FROM (
-    SELECT
-        runs.id AS run_id,
-        runs.code_state_id AS code_state_id,
-        runs.environment_id AS environment_id,
-        code_states.label AS code_label,
-        environments.label AS environment_label,
-        code_states.code_date AS code_date,
-        runs.measured_at AS measured_at,
-        runs.notes AS notes,
-        code_states.identity AS code_state_identity,
-        code_states.metadata AS code_state_metadata,
-        environments.identity AS environment_identity,
-        environments.metadata AS environment_metadata,
-        runs.metadata AS run_metadata,
-        results.benchmark_path AS benchmark_path,
-        results.benchmark_id AS benchmark_id,
-        results.benchmark_label AS benchmark_label,
-        results.metric_name AS metric_name,
-        results.statistic AS statistic,
-        results.unit AS unit,
-        results.value AS value,
-        results.better AS better,
-        ROW_NUMBER() OVER (
-            PARTITION BY
+        CREATE VIEW IF NOT EXISTS benchmark_results_latest AS
+        SELECT
+            run_id,
+            code_state_id,
+            environment_id,
+            code_label,
+            environment_label,
+            code_date,
+            measured_at,
+            notes,
+            code_state_identity,
+            code_state_metadata,
+            environment_identity,
+            environment_metadata,
+            run_metadata,
+            benchmark_path,
+            benchmark_id,
+            benchmark_label,
+            metric_name,
+            statistic,
+            unit,
+            value,
+            better
+        FROM (
+            SELECT
+                runs.id AS run_id,
                 runs.code_state_id,
                 runs.environment_id,
+                code_states.label AS code_label,
+                environments.label AS environment_label,
+                code_states.code_date,
+                runs.measured_at,
+                runs.notes,
+                code_states.identity AS code_state_identity,
+                code_states.metadata AS code_state_metadata,
+                environments.identity AS environment_identity,
+                environments.metadata AS environment_metadata,
+                runs.metadata AS run_metadata,
+                results.benchmark_path,
                 results.benchmark_id,
+                results.benchmark_label,
                 results.metric_name,
-                results.statistic
-            ORDER BY runs.measured_at DESC, runs.id DESC
-        ) AS rn
-    FROM benchmark_results AS results
-    JOIN benchmark_runs AS runs ON runs.id = results.run_id
-    JOIN benchmark_code_states AS code_states ON code_states.id = runs.code_state_id
-    JOIN benchmark_environments AS environments ON environments.id = runs.environment_id
-)
-WHERE rn = 1
-""")
+                results.statistic,
+                results.unit,
+                results.value,
+                results.better,
+                ROW_NUMBER() OVER (
+                    PARTITION BY runs.code_state_id, runs.environment_id,
+                        results.benchmark_id, results.metric_name, results.statistic
+                    ORDER BY runs.measured_at DESC, runs.id DESC
+                ) AS rn
+            FROM benchmark_results AS results
+            JOIN benchmark_runs AS runs ON runs.id = results.run_id
+            JOIN benchmark_code_states AS code_states ON code_states.id = runs.code_state_id
+            JOIN benchmark_environments AS environments ON environments.id = runs.environment_id
+        )
+        WHERE rn = 1
+        """)
 end
 
 function create_v5_indexes!(db)
@@ -517,81 +511,75 @@ end
 function init_database!(db)
     SQLite.execute(db,
         """
-CREATE TABLE IF NOT EXISTS benchledger_metadata (
-    key TEXT PRIMARY KEY,
-    value TEXT NOT NULL)
-""")
+        CREATE TABLE IF NOT EXISTS benchledger_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL)
+        """)
     SQLite.execute(db,
         """
-CREATE TABLE IF NOT EXISTS benchmark_code_states (
-    id TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    code_date TEXT NOT NULL,
-    identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
-    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)))
-""")
+        CREATE TABLE IF NOT EXISTS benchmark_code_states (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            code_date TEXT NOT NULL,
+            identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
+            metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)))
+        """)
     SQLite.execute(db,
         """
-CREATE TABLE IF NOT EXISTS benchmark_environments (
-    id TEXT PRIMARY KEY,
-    label TEXT NOT NULL,
-    identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
-    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)))
-""")
+        CREATE TABLE IF NOT EXISTS benchmark_environments (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
+            metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)))
+        """)
     SQLite.execute(db,
         """
-CREATE TABLE IF NOT EXISTS benchmark_runs (
-    id TEXT PRIMARY KEY,
-    code_state_id TEXT NOT NULL,
-    environment_id TEXT NOT NULL,
-    measured_at TEXT NOT NULL,
-    notes TEXT NOT NULL DEFAULT '',
-    metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)),
-    FOREIGN KEY (code_state_id) REFERENCES benchmark_code_states(id) ON DELETE RESTRICT,
-    FOREIGN KEY (environment_id) REFERENCES benchmark_environments(id) ON DELETE RESTRICT)
-""")
+        CREATE TABLE IF NOT EXISTS benchmark_runs (
+            id TEXT PRIMARY KEY,
+            code_state_id TEXT NOT NULL,
+            environment_id TEXT NOT NULL,
+            measured_at TEXT NOT NULL,
+            notes TEXT NOT NULL DEFAULT '',
+            metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)),
+            FOREIGN KEY (code_state_id) REFERENCES benchmark_code_states(id) ON DELETE RESTRICT,
+            FOREIGN KEY (environment_id) REFERENCES benchmark_environments(id) ON DELETE RESTRICT)
+        """)
     SQLite.execute(db,
         """
-CREATE TABLE IF NOT EXISTS benchmark_results (
-    run_id TEXT NOT NULL,
-    benchmark_id TEXT NOT NULL,
-    benchmark_path TEXT NOT NULL,
-    benchmark_label TEXT NOT NULL,
-    metric_name TEXT NOT NULL,
-    statistic TEXT NOT NULL,
-    unit TEXT NOT NULL,
-    value REAL NOT NULL,
-    better TEXT NOT NULL CHECK (better IN ('lower', 'higher', 'neutral')),
-    PRIMARY KEY (run_id, benchmark_id, metric_name, statistic),
-    FOREIGN KEY (run_id) REFERENCES benchmark_runs(id) ON DELETE CASCADE)
-""")
+        CREATE TABLE IF NOT EXISTS benchmark_results (
+            run_id TEXT NOT NULL,
+            benchmark_id TEXT NOT NULL,
+            benchmark_path TEXT NOT NULL,
+            benchmark_label TEXT NOT NULL,
+            metric_name TEXT NOT NULL,
+            statistic TEXT NOT NULL,
+            unit TEXT NOT NULL,
+            value REAL NOT NULL,
+            better TEXT NOT NULL CHECK (better IN ('lower', 'higher', 'neutral')),
+            PRIMARY KEY (run_id, benchmark_id, metric_name, statistic),
+            FOREIGN KEY (run_id) REFERENCES benchmark_runs(id) ON DELETE CASCADE)
+        """)
     create_latest_view_v5!(db)
     create_v5_indexes!(db)
 end
 
 function make_metadata!(db, context)
-    metadata = (
-        schema_version=Benchledger_Schema_Version,
-        name=Benchledger_Metadata_Defaults.name,
-        description=Benchledger_Metadata_Defaults.description,
-        project_url=Benchledger_Metadata_Defaults.project_url,
-        logo_url=Benchledger_Metadata_Defaults.logo_url,
-        logo_url_dark=Benchledger_Metadata_Defaults.logo_url_dark,
-        updated_at=context.measured_at,
-        notes=Benchledger_Metadata_Defaults.notes,
+    metadata = merge((schema_version=Benchledger_Schema_Version,),
+        Benchledger_Metadata_Defaults,
+        (updated_at=context.measured_at,)
     )
     for (key, value) in pairs(metadata)
         DBInterface.execute(db, """
-INSERT INTO benchledger_metadata (key, value)
-VALUES (?, ?)
-ON CONFLICT (key) DO UPDATE SET value = excluded.value
-""", (String(key), String(value)))
+            INSERT INTO benchledger_metadata (key, value)
+            VALUES (?, ?)
+            ON CONFLICT (key) DO UPDATE SET value = excluded.value
+            """, (String(key), String(value)))
     end
     DBInterface.execute(db, """
-INSERT INTO benchledger_metadata (key, value)
-VALUES ('created_at', ?)
-ON CONFLICT (key) DO NOTHING
-""", (context.measured_at,))
+        INSERT INTO benchledger_metadata (key, value)
+        VALUES ('created_at', ?)
+        ON CONFLICT (key) DO NOTHING
+        """, (context.measured_at,))
 end
 
 function validate_table_columns(db::SQLite.DB, path::AbstractString, table::AbstractString, required_columns)
@@ -631,201 +619,6 @@ function validate_schema_version!(db::SQLite.DB, path::AbstractString)
     validate_table_columns(db, path, "benchmark_results", ("run_id", "benchmark_id", "benchmark_path", "benchmark_label", "metric_name", "statistic", "unit", "value", "better"))
 end
 
-# ╔══════════════════════════════════════════════════════════════════════════════╗
-# ║ BenchLedger schema migration: v4 -> v5                                     ║
-# ║                                                                            ║
-# ║ Temporary compatibility block. After all databases have been migrated,     ║
-# ║ delete this entire block and remove the schema_version == "4" branch from  ║
-# ║ open_database below.                                                       ║
-# ╚══════════════════════════════════════════════════════════════════════════════╝
-
-function validate_v4_layout!(db::SQLite.DB, path::AbstractString)
-    validate_table_columns(db, path, "benchmark_code_states", ("code_state_id", "label", "code_date", "metadata"))
-    validate_table_columns(db, path, "benchmark_environments", ("environment_id", "label", "metadata"))
-    validate_table_columns(db, path, "benchmark_runs", ("run_id", "code_state_id", "environment_id", "measured_at", "notes", "metadata"))
-    validate_table_columns(db, path, "benchmark_results", ("run_id", "benchmark_id", "benchmark_path", "benchmark_label", "metric_name", "statistic", "unit", "value", "better"))
-end
-
-function take_fields!(object::AbstractDict, fields)
-    selected = Dict{String,Any}()
-    for field in fields
-        haskey(object, field) && (selected[field] = pop!(object, field))
-    end
-    selected
-end
-
-function take_child_fields!(parent::AbstractDict, key::AbstractString, fields)
-    child = get(parent, key, nothing)
-    child isa AbstractDict || return Dict{String,Any}()
-    selected = take_fields!(child, fields)
-    isempty(child) && delete!(parent, key)
-    selected
-end
-
-function split_v4_code_state_metadata(metadata::AbstractDict)
-    remaining = deepcopy(metadata)
-    source_identity = take_child_fields!(remaining, "source", ("kind", "revision", "diff_digest"))
-    identity = Dict{String,Any}("source" => source_identity)
-    identity, remaining
-end
-
-function split_v4_environment_metadata(metadata::AbstractDict)
-    remaining = deepcopy(metadata)
-
-    runtime_identity = take_child_fields!(remaining, "runtime", ("name", "version"))
-
-    platform = get(remaining, "platform", nothing)
-    platform_identity = Dict{String,Any}()
-    if platform isa AbstractDict
-        os_identity = take_child_fields!(platform, "os", ("name", "version"))
-        kernel_identity = take_child_fields!(platform, "kernel", ("name", "version"))
-        !isempty(os_identity) && (platform_identity["os"] = os_identity)
-        !isempty(kernel_identity) && (platform_identity["kernel"] = kernel_identity)
-        haskey(platform, "architecture") && (platform_identity["architecture"] = pop!(platform, "architecture"))
-        isempty(platform) && delete!(remaining, "platform")
-    end
-
-    hardware = get(remaining, "hardware", nothing)
-    hardware_identity = Dict{String,Any}()
-    if hardware isa AbstractDict
-        cpu_identity = take_child_fields!(hardware, "cpu", ("model", "logical_threads"))
-        !isempty(cpu_identity) && (hardware_identity["cpu"] = cpu_identity)
-        haskey(hardware, "gpu") && (hardware_identity["gpu"] = pop!(hardware, "gpu"))
-        haskey(hardware, "tpu") && (hardware_identity["tpu"] = pop!(hardware, "tpu"))
-        haskey(hardware, "npu") && (hardware_identity["npu"] = pop!(hardware, "npu"))
-        isempty(hardware) && delete!(remaining, "hardware")
-    end
-
-    execution_identity = take_child_fields!(remaining, "execution", ("processes", "threads", "gpu_devices", "tpu_devices", "npu_devices"))
-    gpu_runtime_identity = haskey(remaining, "gpu_runtime") ? pop!(remaining, "gpu_runtime") : nothing
-
-    run_metadata = Dict{String,Any}()
-    benchmark = get(remaining, "benchmark", nothing)
-    if benchmark isa AbstractDict && haskey(benchmark, "framework")
-        run_metadata["benchmark"] = Dict{String,Any}("framework" => pop!(benchmark, "framework"))
-        isempty(benchmark) && delete!(remaining, "benchmark")
-    end
-    gpu = get(remaining, "gpu", nothing)
-    if gpu isa AbstractDict && haskey(gpu, "interface")
-        run_metadata["gpu"] = Dict{String,Any}("interface" => pop!(gpu, "interface"))
-        isempty(gpu) && delete!(remaining, "gpu")
-    end
-
-    identity = Dict{String,Any}()
-    !isempty(runtime_identity) && (identity["runtime"] = runtime_identity)
-    !isempty(platform_identity) && (identity["platform"] = platform_identity)
-    !isempty(hardware_identity) && (identity["hardware"] = hardware_identity)
-    !isempty(execution_identity) && (identity["execution"] = execution_identity)
-    gpu_runtime_identity !== nothing && (identity["gpu_runtime"] = gpu_runtime_identity)
-    identity, remaining, run_metadata
-end
-
-function migrate_v4_code_state_id(old_id::AbstractString)
-    startswith(old_id, "code-") && return String(old_id)
-    startswith(old_id, "local+") && return string("code-local-", replace(String(old_id), "local+" => ""; count=1))
-    string("code-", old_id)
-end
-
-function drop_v4_named_indexes!(db)
-    for index in (
-        "benchmark_code_states_code_date_index",
-        "benchmark_runs_measured_at_index",
-        "benchmark_runs_code_state_id_index",
-        "benchmark_runs_environment_id_index",
-        "benchmark_runs_latest_partition_index",
-        "benchmark_results_metric_lookup_index",
-    )
-        SQLite.execute(db, "DROP INDEX IF EXISTS $(index)")
-    end
-end
-
-function migrate_v4_to_v5!(db::SQLite.DB, path::AbstractString)
-    validate_v4_layout!(db, path)
-    println("Migrating BenchLedger database from schema v4 to v5: $(path)")
-
-    backup_path = string(path, "_v4")
-    SQLite.execute(db, "PRAGMA wal_checkpoint(FULL)")
-    cp(path, backup_path; force=true)
-    println("Backed up schema v4 database to: $(backup_path)")
-
-    SQLite.execute(db, "PRAGMA foreign_keys=OFF")
-    SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
-    try
-        SQLite.execute(db, "DROP VIEW IF EXISTS benchmark_results_latest")
-        drop_v4_named_indexes!(db)
-        SQLite.execute(db, "ALTER TABLE benchmark_code_states RENAME TO benchmark_code_states_v4")
-        SQLite.execute(db, "ALTER TABLE benchmark_environments RENAME TO benchmark_environments_v4")
-        SQLite.execute(db, "ALTER TABLE benchmark_runs RENAME TO benchmark_runs_v4")
-        SQLite.execute(db, "ALTER TABLE benchmark_results RENAME TO benchmark_results_v4")
-
-        init_database!(db)
-
-        code_state_id_map = Dict{String,String}()
-        for row in DBInterface.execute(db, "SELECT code_state_id, label, code_date, metadata FROM benchmark_code_states_v4")
-            old_id = String(row.code_state_id)
-            new_id = migrate_v4_code_state_id(old_id)
-            parsed_metadata = JSON.parse(String(row.metadata); dicttype=Dict{String,Any})
-            identity, metadata = split_v4_code_state_metadata(parsed_metadata)
-            persist_labeled_entity!(db, "benchmark_code_states", new_id, canonical_json(identity), canonical_json(metadata), String(row.label); code_date=String(row.code_date))
-            code_state_id_map[old_id] = new_id
-        end
-
-        environment_id_map = Dict{String,String}()
-        environment_run_metadata = Dict{String,Dict{String,Any}}()
-        for row in DBInterface.execute(db, "SELECT environment_id, label, metadata FROM benchmark_environments_v4")
-            old_id = String(row.environment_id)
-            parsed_metadata = JSON.parse(String(row.metadata); dicttype=Dict{String,Any})
-            identity, metadata, run_metadata = split_v4_environment_metadata(parsed_metadata)
-            identity_json = canonical_json(identity)
-            new_id = string("env-", bytes2hex(sha256(codeunits(identity_json))))
-            persist_labeled_entity!(db, "benchmark_environments", new_id, identity_json, canonical_json(metadata), String(row.label))
-            environment_id_map[old_id] = new_id
-            run_metadata["host"] = Dict{String,Any}("hostname" => String(row.label))
-            environment_run_metadata[old_id] = run_metadata
-        end
-
-        for row in DBInterface.execute(db, "SELECT run_id, code_state_id, environment_id, measured_at, notes, metadata FROM benchmark_runs_v4")
-            old_code_state_id = String(row.code_state_id)
-            old_environment_id = String(row.environment_id)
-            haskey(code_state_id_map, old_code_state_id) || error("Missing migrated code state for $(old_code_state_id).")
-            haskey(environment_id_map, old_environment_id) || error("Missing migrated environment for $(old_environment_id).")
-            run_metadata = deepcopy(environment_run_metadata[old_environment_id])
-            merge_metadata!(run_metadata, JSON.parse(String(row.metadata); dicttype=Dict{String,Any}))
-            DBInterface.execute(db,
-                "INSERT INTO benchmark_runs (id, code_state_id, environment_id, measured_at, notes, metadata) VALUES (?, ?, ?, ?, ?, ?)",
-                (String(row.run_id), code_state_id_map[old_code_state_id], environment_id_map[old_environment_id], String(row.measured_at), String(row.notes), canonical_json(run_metadata)))
-        end
-
-        SQLite.execute(db,
-            """
-            INSERT INTO benchmark_results (run_id, benchmark_id, benchmark_path, benchmark_label, metric_name, statistic, unit, value, better)
-            SELECT run_id, benchmark_id, benchmark_path, benchmark_label, metric_name, statistic, unit, value, better
-            FROM benchmark_results_v4
-            """)
-
-        SQLite.execute(db, "DROP TABLE benchmark_results_v4")
-        SQLite.execute(db, "DROP TABLE benchmark_runs_v4")
-        SQLite.execute(db, "DROP TABLE benchmark_code_states_v4")
-        SQLite.execute(db, "DROP TABLE benchmark_environments_v4")
-        DBInterface.execute(db, "UPDATE benchledger_metadata SET value = ? WHERE key = 'schema_version'", (Benchledger_Schema_Version,))
-        SQLite.execute(db, "COMMIT")
-    catch err
-        SQLite.execute(db, "ROLLBACK")
-        rethrow(err)
-    finally
-        SQLite.execute(db, "PRAGMA foreign_keys=ON")
-    end
-
-    fk_violation = DBInterface.execute(db, "PRAGMA foreign_key_check") do result
-        iterate(result) !== nothing
-    end
-    fk_violation && error("Foreign-key validation failed after migrating $(path) from schema v4 to v5.")
-    validate_schema_version!(db, path)
-    println("BenchLedger schema migration v4 -> v5 completed.")
-end
-
-# End temporary v4 -> v5 migration support.
-
 function open_database(path::AbstractString, context)
     mkpath(dirname(path))
     is_new_db = !isfile(path)
@@ -833,17 +626,7 @@ function open_database(path::AbstractString, context)
     SQLite.execute(db, "PRAGMA foreign_keys=ON")
     SQLite.execute(db, "PRAGMA journal_mode=WAL")
     SQLite.execute(db, "PRAGMA synchronous=NORMAL")
-
-    if !is_new_db
-        schema_version = read_schema_version(db, path)
-        if schema_version == "4"
-            migrate_v4_to_v5!(db, path)
-        elseif schema_version != Benchledger_Schema_Version
-            error("Unsupported BenchLedger schema version in $(path): $(schema_version). Expected 4 or $(Benchledger_Schema_Version).")
-        end
-        validate_schema_version!(db, path)
-    end
-
+    !is_new_db && validate_schema_version!(db, path)
     init_database!(db)
     make_metadata!(db, context)
     db
@@ -862,34 +645,21 @@ function metric_rows(benchmark_path::Vector{String}, trial::BenchmarkTools.Trial
     ]
 end
 
-function metric_rows(benchmark_path::Vector{String}, value)
-    error("Unsupported benchmark leaf at $(join(benchmark_path, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
-end
+metric_rows(benchmark_path::Vector{String}, value) = error("Unsupported benchmark leaf at $(join(benchmark_path, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
 
 metric_rows(rows::Vector{BenchmarkMetricRow}) = rows
 metric_rows(rows::AbstractVector{<:BenchmarkMetricRow}) = BenchmarkMetricRow[row for row in rows]
 metric_rows(rows::AbstractVector{<:NamedTuple}) = [metric_row(row) for row in rows]
-metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple},<:BenchmarkGroup}) = vcat(metric_rows(results[1]), metric_rows(results[2]))
+metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple},<:BenchmarkGroup}) =
+    vcat(metric_rows(results[1]), metric_rows(results[2]))
 
-function flatten_trial_rows(results::BenchmarkGroup, prefix::Vector{String}=String[])
-    rows = Tuple{Vector{String},Any}[]
-    for (name, value) in pairs(results)
-        benchmark_path = [prefix; String(name)]
-        if value isa BenchmarkGroup
-            append!(rows, flatten_trial_rows(value, benchmark_path))
-        else
-            push!(rows, (benchmark_path, value))
-        end
-    end
-    rows
-end
-
-function metric_rows(results::BenchmarkGroup)
+function metric_rows(results::BenchmarkGroup, prefix::Vector{String}=String[])
     rows = BenchmarkMetricRow[]
-    for (benchmark_path, value) in flatten_trial_rows(results)
-        append!(rows, metric_rows(benchmark_path, value))
+    for (name, value) in pairs(results)
+        path = [prefix; String(name)]
+        append!(rows, value isa BenchmarkGroup ? metric_rows(value, path) : metric_rows(path, value))
     end
-    rows
+    return rows
 end
 
 function benchmark_id(path::Vector{String})
@@ -898,23 +668,23 @@ function benchmark_id(path::Vector{String})
         write(encoded, string(sizeof(segment), ":"))
         write(encoded, segment)
     end
-    bytes2hex(sha1(take!(encoded)))
+    return bytes2hex(sha1(take!(encoded)))
 end
 
-function required_metric_field(row::NamedTuple, field::Symbol)
-    hasproperty(row, field) || error("Missing required metric field: $(field).")
-    getproperty(row, field)
-end
+required_metric_field(row::NamedTuple, field::Symbol) =
+    hasproperty(row, field) ? getproperty(row, field) : error("Missing required metric field: $(field).")
 
 function metric_row(row::NamedTuple)
-    benchmark_path = hasproperty(row, :benchmark_path) ? begin
+    benchmark_path = if hasproperty(row, :benchmark_path)
         value = getproperty(row, :benchmark_path)
         value isa AbstractVector || error("benchmark_path must be a vector of strings.")
         String[String(segment) for segment in value]
-    end : error("Missing required metric field: benchmark_path.")
+    else
+        error("Missing required metric field: benchmark_path.")
+    end
     benchmark_id_value = hasproperty(row, :benchmark_id) ? String(getproperty(row, :benchmark_id)) : benchmark_id(benchmark_path)
     benchmark_label_value = hasproperty(row, :benchmark_label) ? String(getproperty(row, :benchmark_label)) : join(benchmark_path, " / ")
-    BenchmarkMetricRow(
+    return BenchmarkMetricRow(
         benchmark_path,
         isempty(benchmark_id_value) ? benchmark_id(benchmark_path) : benchmark_id_value,
         isempty(benchmark_label_value) ? join(benchmark_path, " / ") : benchmark_label_value,
@@ -939,7 +709,7 @@ function validate_metric_rows(rows::AbstractVector{<:BenchmarkMetricRow})
         key in seen && error("Duplicate metric row in the same run for benchmark_id=$(row.benchmark_id), metric_name=$(row.metric_name), statistic=$(row.statistic).")
         push!(seen, key)
     end
-    rows
+    return rows
 end
 
 function benchmark_result_row(run_id::AbstractString, row::BenchmarkMetricRow)
@@ -982,24 +752,8 @@ function persist_labeled_entity!(db::SQLite.DB, table::AbstractString, id_value:
 end
 
 function insert_run!(db::SQLite.DB, context)
-    DBInterface.execute(db, """
-INSERT INTO benchmark_runs (
-    id,
-    code_state_id,
-    environment_id,
-    measured_at,
-    notes,
-    metadata
-)
-VALUES (?, ?, ?, ?, ?, ?)
-""", (
-            context.id,
-            context.code_state_id,
-            context.environment_id,
-            context.measured_at,
-            context.notes,
-            context.metadata,
-        ))
+    DBInterface.execute(db, "INSERT INTO benchmark_runs (id, code_state_id, environment_id, measured_at, notes, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+        (context.id, context.code_state_id, context.environment_id, context.measured_at, context.notes, context.metadata,))
 end
 
 function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:BenchmarkMetricRow}, run_id::AbstractString)
@@ -1012,19 +766,10 @@ end
 function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMetricRow}, code_state, environment, context)
     stmt = SQLite.Stmt(db,
         """
-INSERT INTO benchmark_results (
-    benchmark_id,
-    run_id,
-    benchmark_path,
-    benchmark_label,
-    metric_name,
-    statistic,
-    unit,
-    value,
-    better
-)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-""")
+        INSERT INTO benchmark_results (benchmark_id, run_id, benchmark_path, benchmark_label,
+            metric_name, statistic, unit, value, better)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """)
     SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
     try
         persist_labeled_entity!(db, "benchmark_code_states", code_state.id, code_state.identity, code_state.metadata, code_state.label; code_date=code_state.code_date)
@@ -1042,7 +787,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 end
 
 measured_at = iso_utc_now()
-source = make_source_context(measured_at)
+source = make_source_context()
 code_state = make_code_state(source, measured_at)
 environment = make_environment()
 context = make_run_context(source, code_state, environment, measured_at)
