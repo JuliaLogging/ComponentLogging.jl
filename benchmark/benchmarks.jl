@@ -33,6 +33,16 @@ end
 const LG_ENABLED  = make_logger(Info)   # Allow Info level
 const LG_FILTERED = make_logger(Error)  # Filter out Info level
 
+# Bind implicit macro paths once; avoid mutating the registry during benchmarks
+CL.set_module_logger(@__MODULE__, LG_ENABLED)
+
+module FilteredImplicitBenchmark
+using ComponentLogging
+using Logging
+@inline run(msg) = (@clog :opti Info msg)
+end
+CL.set_module_logger(FilteredImplicitBenchmark, LG_FILTERED)
+
 #──────────────────────────────────────────────────────────────────────────────────────────
 # Benchmark messages/closures
 const MSG_STR = "x"
@@ -88,6 +98,21 @@ SUITE["enabled"]["clogf/tuple2/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED
 SUITE["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP8, Info, $HEAVY_1)
 # 2.4 clogf: Allowed but chose not to output (returns nothing)
 SUITE["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1_NOLOG)
+
+# 3) Module registry / implicit macro path
+SUITE["registry"] = BenchmarkGroup()
+# Registry lookup
+SUITE["registry"]["get_logger"] = @benchmarkable CL.get_logger(@__MODULE__)
+# Registry lookup + function API
+SUITE["registry"]["enabled/get_logger+clog"] = @benchmarkable CL.clog(
+    CL.get_logger(@__MODULE__), :opti, Info, $MSG_STR
+)
+SUITE["registry"]["filtered/get_logger+clog"] = @benchmarkable CL.clog(
+    CL.get_logger(FilteredImplicitBenchmark), :opti, Info, $MSG_STR
+)
+# Actual implicit macro paths
+SUITE["registry"]["enabled/implicit/@clog"] = @benchmarkable CL.@clog :opti Info $MSG_STR
+SUITE["registry"]["filtered/implicit/@clog"] = @benchmarkable FilteredImplicitBenchmark.run($MSG_STR)
 
 #──────────────────────────────────────────────────────────────────────────────────────────
 # Run & Display

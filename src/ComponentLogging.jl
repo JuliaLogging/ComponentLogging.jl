@@ -95,28 +95,42 @@ Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _modul
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)
 
 ## Module registry
-const _RegistryLock = ReentrantLock()
-const _Registry = IdDict{Module,AbstractLogger}()
+mutable struct _RegistryState
+    const loggers::IdDict{Module,AbstractLogger}
+end
+
+mutable struct _RegistryStore
+    @atomic state::_RegistryState
+    const lock::ReentrantLock
+end
+
+const _Registry = _RegistryStore(
+    _RegistryState(IdDict{Module,AbstractLogger}()),
+    ReentrantLock(),
+)
 
 function set_module_logger(mod::Module, logger::AbstractLogger)::String
-    @lock _RegistryLock _Registry[mod] = logger
+    @lock _Registry.lock begin
+        state = @atomic :acquire _Registry.state
+        loggers = copy(state.loggers)
+        loggers[mod] = logger
+        @atomic :release _Registry.state = _RegistryState(loggers)
+    end
     string(mod) * " <- " * string(typeof(logger))
 end
 
 "Get the logger for the calling module; if unbound, fallback through parent modules; error at the top"
-function get_logger(mod::Module)
-    @lock _RegistryLock begin
-        m = mod
-        while true
-            if haskey(_Registry, m)
-                return _Registry[m]
-            end
-            pm = parentmodule(m)
-            if pm === m   # reached the top (e.g. Base/Core/Main)
-                throw(ErrorException("the current module and its parent modules have no logger bounded"))
-            end
-            m = pm
+@inline function get_logger(mod::Module)
+    loggers = (@atomic :acquire _Registry.state).loggers
+    m = mod
+    while true
+        logger = get(loggers, m, nothing)
+        logger !== nothing && return logger
+        pm = parentmodule(m)
+        if pm === m   # reached the top (e.g. Base/Core/Main)
+            throw(ErrorException("the current module and its parent modules have no logger bound"))
         end
+        m = pm
     end
 end
 
