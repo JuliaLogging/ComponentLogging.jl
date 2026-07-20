@@ -2,6 +2,11 @@
     level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, grp, id)
 end
 
+@inline function _enabled(logger::ComponentLogger, level::LogLevel, grp; _module, id)
+    state = @atomic :acquire logger.state
+    level >= state.min_level && level >= _effective_level(state.rules, grp)
+end
+
 resolve_logger(logger::AbstractLogger) = logger
 resolve_logger(logger_ref::Base.RefValue{<:AbstractLogger}) = logger_ref[]
 
@@ -65,9 +70,6 @@ macro forward_logger(logger)
 
         $(esc(:set_log_level))(group, on::Bool) =
             ComponentLogging.set_log_level!(ComponentLogging.resolve_logger($logger_ex), group, on)
-
-        $(esc(:with_min_level))(f, level::Union{Integer,ComponentLogging.LogLevel}) =
-            ComponentLogging.with_min_level(f, ComponentLogging.resolve_logger($logger_ex), level)
 
         nothing
     end

@@ -89,9 +89,6 @@ SUITE["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED
 # 2.4 clogf: Allowed but chose not to output (returns nothing)
 SUITE["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1_NOLOG)
 
-# 3) Micro comparison: Explicit logger vs implicit
-# SUITE["enabled"]["clog/implicit"] = @benchmarkable CL.clog(:opti, Info, $MSG_STR)
-
 #──────────────────────────────────────────────────────────────────────────────────────────
 # Run & Display
 tune!(SUITE; seconds=2.0)

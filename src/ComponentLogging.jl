@@ -1,11 +1,9 @@
 module ComponentLogging
 using Logging
-using Base.Threads: Atomic
-
 include("PlainLogger.jl")
 export PlainLogger
 
-export ComponentLogger, get_logger, set_module_logger, set_log_level!, with_min_level
+export ComponentLogger, get_logger, set_module_logger, set_log_level!
 export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf, @forward_logger
 
@@ -20,17 +18,21 @@ msg_to_tuple(x::Tuple) = x
 msg_to_tuple(x) = (x,)
 
 ## ComponentLogger
-struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
-    rules::Dict{RuleKey,LogLevel}
+mutable struct _LoggerState
+    const rules::Dict{RuleKey,LogLevel}
+    const min_level::LogLevel
+end
+
+mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
+    @atomic state::_LoggerState
     sink::L
     lock::ReentrantLock
-    min_level::Atomic{Int32}
 end
 
 function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info); sink=ConsoleLogger(Debug))
     rules = copy(rules)
-    minlvl = Atomic{Int32}(minimum(values(rules)).level)
-    return ComponentLogger(rules, sink, ReentrantLock(), minlvl)
+    state = _LoggerState(rules, minimum(values(rules)))
+    return ComponentLogger(state, sink, ReentrantLock())
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
@@ -48,17 +50,11 @@ function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLe
     grp = _tokey(group)
     lv = LogLevel(lvl)
     @lock logger.lock begin
-        old = get(logger.rules, grp, nothing)
-        minlvl = LogLevel(logger.min_level[])
-        if lv < minlvl
-            logger.min_level[] = lv.level
-            logger.rules[grp] = lv
-        else
-            logger.rules[grp] = lv
-            if old !== nothing && old === minlvl && lv > minlvl
-                logger.min_level[] = minimum(values(logger.rules)).level
-            end
-        end
+        state = @atomic :acquire logger.state
+        rules = copy(state.rules)
+        rules[grp] = lv
+        state = _LoggerState(rules, minimum(values(rules)))
+        @atomic :release logger.state = state
     end
     return logger
 end
@@ -66,42 +62,34 @@ end
 set_log_level!(logger::ComponentLogger, group, on::Bool) =
     set_log_level!(logger, group, on ? 0 : 1)
 
-"Temporarily set the minimum level for the current task within a do-block; restore afterward even if an exception is thrown"
-with_min_level(f::Function, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) =
-    task_local_storage(f, logger, LogLevel(lvl))
-
 @inline function _effective_level(rules::Dict{RuleKey,LogLevel}, group::Union{Symbol,RuleKey})::LogLevel
     path = _tokey(group) #::NTuple{N,Symbol}
     return _effective_level_chain(rules, path)
 end
-@generated function _effective_level_chain(rules::Dict{RuleKey,LogLevel},
-    path::NTuple{N,Symbol})::LogLevel where {N}
+
+@generated function _effective_level_chain(rules::Dict{RuleKey,LogLevel}, path::NTuple{N,Symbol}
+)::LogLevel where {N}
     steps = Vector{Expr}()
 
-    push!(steps, :(lvl = get(rules, (DEFAULT_SYM,), Info)))
-    if N >= 1
-        push!(steps, :(lvl = get(rules, (path[1],), lvl)))
-    end
-    for n = 2:N
-        tup = Expr(:tuple, [:(path[$i]) for i = 1:n]...)
-        push!(steps, :(lvl = get(rules, $tup, lvl)))
+    for n = N:-1:1
+        tup = n == N ? :path : Expr(:tuple, [:(path[$i]) for i = 1:n]...)
+        push!(steps, quote
+            lvl = get(rules, $tup, nothing)
+            lvl !== nothing && return lvl::LogLevel
+        end)
     end
 
-    return quote
-        @inbounds begin
-            $(steps...)
-            return lvl::LogLevel
-        end
-    end
+    push!(steps, :(return get(rules, (DEFAULT_SYM,), Info)::LogLevel))
+
+    return :(@inbounds begin
+        $(steps...)
+    end)
 end
 
-function Logging.min_enabled_level(g::ComponentLogger)::LogLevel
-    lvl = get(task_local_storage(), g, nothing)::Union{Nothing,LogLevel}
-    return lvl === nothing ? LogLevel(g.min_level[]) : lvl
-end
+Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.state).min_level
 
 Logging.shouldlog(g::ComponentLogger, level, _module, group, id) =
-    @lock g.lock level >= _effective_level(g.rules, group)
+    level >= _effective_level((@atomic :acquire g.state).rules, group)
 
 Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...) =
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)
@@ -272,7 +260,8 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
 end
 
 function Base.show(io::IO, ::MIME"text/plain", logger::ComponentLogger)
-    rules, minlvl = @lock logger.lock (copy(logger.rules), LogLevel(logger.min_level[]))
+    state = @atomic :acquire logger.state
+    rules, minlvl = state.rules, state.min_level
     println(io, "ComponentLogger")
     print(io, " sink:\t")
     println(io, nameof(typeof(logger.sink)))

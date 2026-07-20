@@ -96,20 +96,24 @@ end
         # Construct a standalone logger and exercise both lowering and raising the cache
         local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
         @test Logging.min_enabled_level(logger) === Info
-        @test logger.min_level[] == Info.level
+        state = @atomic :acquire logger.state
+        @test state.min_level === Info
 
         ComponentLogging.set_log_level!(logger, :foo, Debug)
         ComponentLogging.set_log_level!(logger, :bar, Debug)
         @test Logging.min_enabled_level(logger) === Debug
-        @test logger.min_level[] == Debug.level
+        state = @atomic :acquire logger.state
+        @test state.min_level === Debug
 
         ComponentLogging.set_log_level!(logger, :foo, Error)
         @test Logging.min_enabled_level(logger) === Debug
-        @test logger.min_level[] == Debug.level
+        state = @atomic :acquire logger.state
+        @test state.min_level === Debug
 
         ComponentLogging.set_log_level!(logger, :bar, Error)
         @test Logging.min_enabled_level(logger) === Info
-        @test logger.min_level[] == Info.level
+        state = @atomic :acquire logger.state
+        @test state.min_level === Info
     end
 
     @testset "concurrent rule updates" begin
@@ -127,6 +131,79 @@ end
         end
         @test Logging.min_enabled_level(logger) === Info
         @test all(group -> !clogenabled(logger, group, Debug), groups)
+    end
+
+    @testset "copy-on-write snapshots" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug); sink)
+        oldstate = @atomic :acquire logger.state
+        oldrules = oldstate.rules
+
+        ComponentLogging.set_log_level!(logger, :a, Error)
+        newstate = @atomic :acquire logger.state
+
+        @test newstate !== oldstate
+        @test newstate.rules !== oldrules
+        @test oldrules[(:a,)] === Debug
+        @test newstate.rules[(:a,)] === Error
+        @test oldstate.min_level === Debug
+        @test newstate.min_level === Info
+    end
+
+    @testset "concurrent readers see consistent snapshots" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug); sink)
+        nreaders = max(2, Threads.nthreads())
+        niter = 20_000
+
+        writer = Threads.@spawn begin
+            for i in 1:niter
+                ComponentLogging.set_log_level!(logger, :a, isodd(i) ? Debug : Error)
+            end
+            nothing
+        end
+
+        readers = map(1:nreaders) do _
+            Threads.@spawn begin
+                ok = true
+                for _ in 1:niter
+                    state = @atomic :acquire logger.state
+                    if state.min_level != minimum(values(state.rules))
+                        ok = false
+                        break
+                    end
+                end
+                ok
+            end
+        end
+
+        fetch(writer)
+        @test all(fetch, readers)
+    end
+
+    @testset "concurrent logging and rule updates" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug, (:a, :b) => Warn); sink)
+        nreaders = max(2, Threads.nthreads())
+        niter = 20_000
+
+        writer = Threads.@spawn begin
+            for i in 1:niter
+                ComponentLogging.set_log_level!(logger, (:a, :b), isodd(i) ? Debug : Error)
+            end
+            nothing
+        end
+
+        readers = map(1:nreaders) do _
+            Threads.@spawn begin
+                ok = true
+                for _ in 1:niter
+                    ok &= clogenabled(logger, (:a, :b), Info) isa Bool
+                    ok &= clogenabled(logger, :a, Debug) isa Bool
+                end
+                ok
+            end
+        end
+
+        fetch(writer)
+        @test all(fetch, readers)
     end
 
     @testset "set_log_level! Bool switch" begin
@@ -183,51 +260,6 @@ end
 
         ForwardLoggerTest.set_log_level(:core, 0)
         @test ForwardLoggerTest.clogenabled(:core, 0) == true
-
-        logger = ForwardLoggerTest.logger_ref[]
-        oldmin = Logging.min_enabled_level(logger)
-        cached_min = logger.min_level[]
-
-        ForwardLoggerTest.with_min_level(2000) do
-            @test Logging.min_enabled_level(logger) === Error
-            @test ForwardLoggerTest.clogenabled(:core, 0) == false
-            @test logger.min_level[] == cached_min
-
-            ForwardLoggerTest.with_min_level(1000) do
-                @test Logging.min_enabled_level(logger) === Warn
-            end
-            @test Logging.min_enabled_level(logger) === Error
-        end
-        @test Logging.min_enabled_level(logger) === oldmin
-        @test logger.min_level[] == cached_min
-        @test ForwardLoggerTest.clogenabled(:core, 0) == true
-
-        @test_throws ErrorException ForwardLoggerTest.with_min_level(2000) do
-            error("test restoration after exception")
-        end
-        @test Logging.min_enabled_level(logger) === oldmin
-
-        entered = Channel{Tuple{LogLevel,Bool}}(1)
-        release = Channel{Nothing}(1)
-        task = @async ForwardLoggerTest.with_min_level(2000) do
-            put!(entered, (
-                Logging.min_enabled_level(logger),
-                ForwardLoggerTest.clogenabled(:core, 0),
-            ))
-            take!(release)
-        end
-        status = timedwait(() -> isready(entered) || istaskdone(task), 5)
-        status === :ok || error("task-local isolation test did not reach its synchronization point")
-        if istaskdone(task) && !isready(entered)
-            fetch(task)
-        end
-        task_min, task_enabled = take!(entered)
-        @test task_min === Error
-        @test task_enabled == false
-        @test Logging.min_enabled_level(logger) === oldmin
-        @test ForwardLoggerTest.clogenabled(:core, 0) == true
-        put!(release, nothing)
-        wait(task)
 
         ForwardLoggerTest2.clog(:core, 0, "independent")
         @test occursin("independent", String(take!(ForwardLoggerTest2.buf)))
