@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+### Changed
+- Improved thread safety for component log-level updates and module logger bindings, allowing logging configuration to be changed safely in concurrent applications.
+- Significantly reduced the overhead of disabled log calls, especially when using the explicit `clog`, `clogf`, and `clogenabled` function APIs.
+- Improved module logger lookup performance.
+- Logging through a `ComponentLogger` no longer serializes message handling; thread safety of message output is delegated to the configured sink logger.
+
+### Fixed
+- Fixed unnecessary allocations and substantial performance regressions introduced in filtered logging paths.
+- Fixed potential data races when log-level rules or module logger bindings are updated concurrently.
 
 ## [0.2.0] - 2026-07-11
 ### Added

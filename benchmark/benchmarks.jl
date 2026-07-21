@@ -9,13 +9,11 @@ Logging.shouldlog(::NullSinkLogger, args...) = true
 Logging.handle_message(::NullSinkLogger, args...; kwargs...) = nothing
 Logging.catch_exceptions(::NullSinkLogger) = false
 
-#──────────────────────────────────────────────────────────────────────────────────────────
 import ComponentLogging as CL
 const RK = CL.RuleKey
 const DEFAULT = (CL.DEFAULT_SYM,)
 
-#──────────────────────────────────────────────────────────────────────────────────────────
-# Create logger
+## Create logger
 # Explicitly add rules for: default group, :opti, (:a,:b), and (:a,:b,:c,:d,:e,:f,:g,:h)
 const TUP2 = (:a, :b)
 const TUP8 = (:a, :b, :c, :d, :e, :f, :g, :h)
@@ -43,8 +41,7 @@ using Logging
 end
 CL.set_module_logger(FilteredImplicitBenchmark, LG_FILTERED)
 
-#──────────────────────────────────────────────────────────────────────────────────────────
-# Benchmark messages/closures
+## Benchmark messages/closures
 const MSG_STR = "x"
 const MSG_TUP = ("x", 123, :sym)   # Multiple arguments/mixed types
 const HEAVY_1 = () -> begin
@@ -61,63 +58,55 @@ const HEAVY_1_NOLOG = () -> begin
     end
     nothing
 end
-
-#──────────────────────────────────────────────────────────────────────────────────────────
 # Lightweight forwarding
 @inline _clogf_call(lg, group, lvl, f) = CL.clogf(f, lg, group, lvl)
 @inline _clogf_call_default(lg, lvl, f) = CL.clogf(f, lg, DEFAULT, lvl)
 
-#──────────────────────────────────────────────────────────────────────────────────────────
-const SUITE = BenchmarkGroup()
+## Suite
+const Suite = BenchmarkGroup()
 
 # 1) Filtered path (min=Error, sending Info) - Decision and routing cost
-SUITE["filtered"]                  = BenchmarkGroup()
-SUITE["filtered"]["clog/default"]  = @benchmarkable CL.clog($LG_FILTERED, $DEFAULT, Info, $MSG_STR)
-SUITE["filtered"]["clog/symbol"]   = @benchmarkable CL.clog($LG_FILTERED, :opti, Info, $MSG_STR)
-SUITE["filtered"]["clog/tuple2"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP2, Info, $MSG_STR)
-SUITE["filtered"]["clog/tuple8"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP8, Info, $MSG_STR)
-SUITE["filtered"]["clogf/default"] = @benchmarkable _clogf_call_default($LG_FILTERED, Info, $HEAVY_1)     # HEAVY_1 should not execute
-SUITE["filtered"]["clogf/symbol"]  = @benchmarkable _clogf_call($LG_FILTERED, :opti, Info, $HEAVY_1)
-SUITE["filtered"]["clogf/tuple2"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP2, Info, $HEAVY_1)
-SUITE["filtered"]["clogf/tuple8"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP8, Info, $HEAVY_1)
+Suite["filtered"]                  = BenchmarkGroup()
+Suite["filtered"]["clog/default"]  = @benchmarkable CL.clog($LG_FILTERED, $DEFAULT, Info, $MSG_STR)
+Suite["filtered"]["clog/symbol"]   = @benchmarkable CL.clog($LG_FILTERED, :opti, Info, $MSG_STR)
+Suite["filtered"]["clog/tuple2"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP2, Info, $MSG_STR)
+Suite["filtered"]["clog/tuple8"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP8, Info, $MSG_STR)
+Suite["filtered"]["clogf/default"] = @benchmarkable _clogf_call_default($LG_FILTERED, Info, $HEAVY_1)     # HEAVY_1 should not execute
+Suite["filtered"]["clogf/symbol"]  = @benchmarkable _clogf_call($LG_FILTERED, :opti, Info, $HEAVY_1)
+Suite["filtered"]["clogf/tuple2"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP2, Info, $HEAVY_1)
+Suite["filtered"]["clogf/tuple8"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP8, Info, $HEAVY_1)
 
 # 2) Allowed path (min=Info, sending Info) - Decision + assembly + call
-SUITE["enabled"] = BenchmarkGroup()
+Suite["enabled"] = BenchmarkGroup()
 # 2.1 Single string
-SUITE["enabled"]["clog/default/str"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_STR)
-SUITE["enabled"]["clog/symbol/str"]  = @benchmarkable CL.clog($LG_ENABLED, :opti, Info, $MSG_STR)
-SUITE["enabled"]["clog/tuple2/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_STR)
-SUITE["enabled"]["clog/tuple8/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_STR)
+Suite["enabled"]["clog/default/str"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_STR)
+Suite["enabled"]["clog/symbol/str"]  = @benchmarkable CL.clog($LG_ENABLED, :opti, Info, $MSG_STR)
+Suite["enabled"]["clog/tuple2/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_STR)
+Suite["enabled"]["clog/tuple8/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_STR)
 # 2.2 Multiple arguments/mixed types
-SUITE["enabled"]["clog/default/tuple"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_TUP...)
-SUITE["enabled"]["clog/tuple2/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_TUP...)
-SUITE["enabled"]["clog/tuple8/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_TUP...)
+Suite["enabled"]["clog/default/tuple"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, Info, $MSG_TUP...)
+Suite["enabled"]["clog/tuple2/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, Info, $MSG_TUP...)
+Suite["enabled"]["clog/tuple8/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, Info, $MSG_TUP...)
 # 2.3 clogf: Only execute heavy work when allowed
-SUITE["enabled"]["clogf/default/heavy"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1)
-SUITE["enabled"]["clogf/tuple2/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP2, Info, $HEAVY_1)
-SUITE["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP8, Info, $HEAVY_1)
+Suite["enabled"]["clogf/default/heavy"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1)
+Suite["enabled"]["clogf/tuple2/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP2, Info, $HEAVY_1)
+Suite["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP8, Info, $HEAVY_1)
 # 2.4 clogf: Allowed but chose not to output (returns nothing)
-SUITE["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1_NOLOG)
+Suite["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, Info, $HEAVY_1_NOLOG)
 
-# 3) Module registry / implicit macro path
-SUITE["registry"] = BenchmarkGroup()
-# Registry lookup
-SUITE["registry"]["get_logger"] = @benchmarkable CL.get_logger(@__MODULE__)
-# Registry lookup + function API
-SUITE["registry"]["enabled/get_logger+clog"] = @benchmarkable CL.clog(
-    CL.get_logger(@__MODULE__), :opti, Info, $MSG_STR
-)
-SUITE["registry"]["filtered/get_logger+clog"] = @benchmarkable CL.clog(
-    CL.get_logger(FilteredImplicitBenchmark), :opti, Info, $MSG_STR
-)
-# Actual implicit macro paths
-SUITE["registry"]["enabled/implicit/@clog"] = @benchmarkable CL.@clog :opti Info $MSG_STR
-SUITE["registry"]["filtered/implicit/@clog"] = @benchmarkable FilteredImplicitBenchmark.run($MSG_STR)
+# 3) Module-bound logger paths
+# 3.1 Registry lookup
+Suite["get_logger"] = @benchmarkable CL.get_logger(@__MODULE__)
+# 3.2 Registry lookup + function API
+Suite["enabled"]["get_logger+clog"] = @benchmarkable CL.clog(CL.get_logger(@__MODULE__), :opti, Info, $MSG_STR)
+Suite["filtered"]["get_logger+clog"] = @benchmarkable CL.clog(CL.get_logger(FilteredImplicitBenchmark), :opti, Info, $MSG_STR)
+# 3.3 Actual implicit macro paths
+Suite["enabled"]["@clog"] = @benchmarkable CL.@clog :opti Info $MSG_STR
+Suite["filtered"]["@clog"] = @benchmarkable FilteredImplicitBenchmark.run($MSG_STR)
 
-#──────────────────────────────────────────────────────────────────────────────────────────
-# Run & Display
-tune!(SUITE; seconds=2.0)
-results = run(SUITE; verbose=true)
+## Run & Display
+tune!(Suite; seconds=2.0)
+results = run(Suite; verbose=true)
 
 if get(ENV, "CI", "false") != "true"
     println("\n" * "─"^24 * " SUMMARY (ns/op，allocs) " * "─"^25)
@@ -142,24 +131,24 @@ end
 
 #=
 ===== SUMMARY (ns/op，allocs) =====
-filtered/clog/tuple2                  3.50 ns        0 allocs     0.00 KiB    
-filtered/clogf/symbol                 2.80 ns        0 allocs     0.00 KiB    
-filtered/clogf/tuple8                 2.60 ns        0 allocs     0.00 KiB    
-filtered/clog/default                 2.80 ns        0 allocs     0.00 KiB    
-filtered/clogf/default                2.80 ns        0 allocs     0.00 KiB    
-filtered/clogf/tuple2                 3.70 ns        0 allocs     0.00 KiB    
-filtered/clog/symbol                  2.40 ns        0 allocs     0.00 KiB    
-filtered/clog/tuple8                  2.40 ns        0 allocs     0.00 KiB    
-enabled/clogf/default/nolog          14.03 ns        0 allocs     0.00 KiB    
-enabled/clog/default/str             15.53 ns        0 allocs     0.00 KiB    
-enabled/clogf/tuple2/heavy          419.10 ns        6 allocs     0.60 KiB    
-enabled/clog/tuple2/str              24.80 ns        0 allocs     0.00 KiB    
-enabled/clog/tuple8/tuple           188.63 ns        0 allocs     0.00 KiB    
-enabled/clogf/tuple8/heavy          591.57 ns        6 allocs     0.60 KiB    
-enabled/clog/symbol/str              13.73 ns        0 allocs     0.00 KiB    
-enabled/clog/default/tuple           15.53 ns        0 allocs     0.00 KiB    
-enabled/clog/tuple2/tuple            24.80 ns        0 allocs     0.00 KiB    
-enabled/clogf/default/heavy         403.02 ns        6 allocs     0.60 KiB    
-enabled/clog/tuple8/str             191.80 ns        0 allocs     0.00 KiB    
+filtered/clog/tuple2                  3.50 ns        0 allocs     0.00 KiB
+filtered/clogf/symbol                 2.80 ns        0 allocs     0.00 KiB
+filtered/clogf/tuple8                 2.60 ns        0 allocs     0.00 KiB
+filtered/clog/default                 2.80 ns        0 allocs     0.00 KiB
+filtered/clogf/default                2.80 ns        0 allocs     0.00 KiB
+filtered/clogf/tuple2                 3.70 ns        0 allocs     0.00 KiB
+filtered/clog/symbol                  2.40 ns        0 allocs     0.00 KiB
+filtered/clog/tuple8                  2.40 ns        0 allocs     0.00 KiB
+enabled/clogf/default/nolog          14.03 ns        0 allocs     0.00 KiB
+enabled/clog/default/str             15.53 ns        0 allocs     0.00 KiB
+enabled/clogf/tuple2/heavy          419.10 ns        6 allocs     0.60 KiB
+enabled/clog/tuple2/str              24.80 ns        0 allocs     0.00 KiB
+enabled/clog/tuple8/tuple           188.63 ns        0 allocs     0.00 KiB
+enabled/clogf/tuple8/heavy          591.57 ns        6 allocs     0.60 KiB
+enabled/clog/symbol/str              13.73 ns        0 allocs     0.00 KiB
+enabled/clog/default/tuple           15.53 ns        0 allocs     0.00 KiB
+enabled/clog/tuple2/tuple            24.80 ns        0 allocs     0.00 KiB
+enabled/clogf/default/heavy         403.02 ns        6 allocs     0.60 KiB
+enabled/clog/tuple8/str             191.80 ns        0 allocs     0.00 KiB
 ====================================
 =#

@@ -71,6 +71,8 @@ macro forward_logger(logger)
         $(esc(:set_log_level))(group, on::Bool) =
             ComponentLogging.set_log_level!(ComponentLogging.resolve_logger($logger_ex), group, on)
 
+        $(esc(:with_min_level))(f, level::Union{Integer,ComponentLogging.LogLevel}) =
+            ComponentLogging.with_min_level(f, ComponentLogging.resolve_logger($logger_ex), level)
         nothing
     end
 end

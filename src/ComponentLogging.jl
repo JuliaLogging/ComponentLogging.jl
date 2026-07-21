@@ -3,7 +3,7 @@ using Logging
 include("PlainLogger.jl")
 export PlainLogger
 
-export ComponentLogger, get_logger, set_module_logger, set_log_level!
+export ComponentLogger, get_logger, set_module_logger, set_log_level!, with_min_level
 export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf, @forward_logger
 
@@ -62,6 +62,22 @@ end
 set_log_level!(logger::ComponentLogger, group, on::Bool) =
     set_log_level!(logger, group, on ? 0 : 1)
 
+function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) where {F}
+    lv = LogLevel(lvl)
+    lock(logger.lock)
+    try
+        oldstate = @atomic :acquire logger.state
+        @atomic :release logger.state = _LoggerState(oldstate.rules, lv)
+        try
+            return f()
+        finally
+            @atomic :release logger.state = oldstate
+        end
+    finally
+        unlock(logger.lock)
+    end
+end
+
 @inline function _effective_level(rules::Dict{RuleKey,LogLevel}, group::Union{Symbol,RuleKey})::LogLevel
     path = _tokey(group) #::NTuple{N,Symbol}
     return _effective_level_chain(rules, path)
@@ -70,7 +86,6 @@ end
 @generated function _effective_level_chain(rules::Dict{RuleKey,LogLevel}, path::NTuple{N,Symbol}
 )::LogLevel where {N}
     steps = Vector{Expr}()
-
     for n = N:-1:1
         tup = n == N ? :path : Expr(:tuple, [:(path[$i]) for i = 1:n]...)
         push!(steps, quote
@@ -78,9 +93,7 @@ end
             lvl !== nothing && return lvl::LogLevel
         end)
     end
-
     push!(steps, :(return get(rules, (DEFAULT_SYM,), Info)::LogLevel))
-
     return :(@inbounds begin
         $(steps...)
     end)
