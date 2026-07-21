@@ -15,10 +15,14 @@ makedocs(;
     ),
     pages    = [
         "Home" => "index.md",
+        "Guide" => [
+            "Hierarchical Runtime Control" => "runtime_control.md",
+        ],
         "API"  => [
             "Common Types" => "common_types.md",
             "Functions"    => "functions.md",
-            "Macros"       => "macros.md",]
+            "Macros"       => "macros.md",
+        ],
     ],
 )
 

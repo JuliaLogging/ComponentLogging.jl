@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Significantly reduced the overhead of disabled log calls, especially when using the explicit `clog`, `clogf`, and `clogenabled` function APIs.
 - Improved module logger lookup performance.
 - Logging through a `ComponentLogger` no longer serializes message handling; thread safety of message output is delegated to the configured sink logger.
+- Changed `with_min_level` from a task-local override to a temporary global minimum-level override for the target `ComponentLogger`. The temporary level applies to all tasks and threads using that logger for the duration of the callback and is restored afterward.
 
 ### Fixed
 - Fixed unnecessary allocations and substantial performance regressions introduced in filtered logging paths.

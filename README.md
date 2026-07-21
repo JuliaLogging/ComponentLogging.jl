@@ -6,19 +6,9 @@
 [![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
 [![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.html)
 
-ComponentLogging provides hierarchical control over log levels and messages. It is designed to replace ad‑hoc `print/println` calls and verbose flags inside functions, and to strengthen control flow in Julia programs.
+ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around *module-scoped component logging* and *hierarchical log-level control*.
 
-## Introduction
-
-ComponentLogging builds on Julia’s stdlib `Logging` to provide a compositional router/logger, `ComponentLogger`, that applies hierarchical minimum levels keyed by `group` (`Symbol` or `NTuple{N,Symbol}`), then delegates to an `AbstractLogger` sink (e.g. `ConsoleLogger` or the included `PlainLogger`).
-
-For performance-sensitive code paths, the core APIs are logger-first (`clog`, `clogenabled`, `clogf`): when you already have a logger, they bypass task-local logger lookup and make it easy to avoid expensive work when logs are off. Use `@forward_logger` to generate module-local forwarding wrappers.
-
-### Features
-- High performance; negligible overhead when logging is disabled. See [Benchmarking](@ref).
-- Suited for controlling module‑wide output granularity using one (or a few) loggers.
-- Enables control‑flow changes based on hierarchical log levels to eliminate unnecessary computations from hot paths.
-- `@forward_logger` macro for ergonomic, module-local forwarding wrappers.
+Unlike Julia's standard [`Logging`](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
 
 ## Installation
 
@@ -68,6 +58,38 @@ ComponentLogger
 * **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
 * **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
 * Define a catch-all like `:__default__ => 0` to control unmatched groups.
+
+### Hierarchical runtime switches
+
+The same group hierarchy can be used as a lightweight runtime control plane. With the forwarding helpers created by `@forward_logger`, `set_log_level(group, true)` enables the group's default `Info`-level check, while `set_log_level(group, false)` disables it.
+
+```julia
+function solve(problem)
+    clogenabled((:solver, :presolve)) && run_presolve!(problem)
+
+    if clogenabled((:solver, :heuristics))
+        run_heuristics!(problem)
+    end
+
+    clogenabled((:solver, :cache)) && update_cache!(problem)
+end
+
+# Change behavior globally for this module/component.
+set_log_level((:solver, :presolve), true)
+set_log_level((:solver, :heuristics), false)
+set_log_level((:solver, :cache), true)
+
+solve(problem)
+```
+
+This lets deeply nested behavior be switched at runtime without passing `verbose`, `enable_*`, or other configuration flags through every function in the call chain. The switches can control logging, diagnostics, optional computations, algorithmic branches, caching strategies, or any other behavior you choose to place behind `clogenabled`.
+
+Without forwarding helpers, use the logger-explicit forms instead:
+
+```julia
+set_log_level!(clogger, (:solver, :heuristics), false)
+clogenabled(clogger, (:solver, :heuristics))
+```
 
 ### Core APIs
 
@@ -253,73 +275,21 @@ Output:
 @ README.md:196
 ```
 
+## Benchmarking
+
+ComponentLogging is continuously benchmarked over time. Current and historical performance results are available on the [benchmark dashboard](https://julialogging.github.io/ComponentLogging.jl/benchmarks/).
+
 ## Similar Packages
 
 [**Memento.jl**][1] is a *flexible, hierarchical* logging framework that brings its own ecosystem of loggers, handlers, formatters, records, and IO backends. Loggers are named (e.g., `"Foo.bar"`), form a hierarchy with propagation to a root logger, and are configured via `config!`, `setlevel!`, and by attaching handlers (file, custom formatters, etc.).
 
-[**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers to *hierarchically-related objects* (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree. 
+[**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers with *hierarchically-related objects* (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree. 
 
-[**ComponentLogging.jl**][3] is a thin, high‑performance layer over the stdlib `Base.CoreLogging` interface. It focuses on:
+[**ComponentLogging.jl**][3] takes a different approach: it is a lightweight, performance-oriented layer over `Base.CoreLogging` built around *module-scoped component logging* and hierarchical group rules. It routes accepted records to any `AbstractLogger` sink, keeps filtered paths extremely cheap, and also exposes the same hierarchy as a lightweight runtime control plane through `clogenabled` and Boolean level switches. For execution-specific logging, the explicit `clog`/`clogf`/`clogenabled` APIs can bypass module-registry lookup entirely.
 
-- **Performance first:** fully type‑stable, no global logger, explicit logger argument for optimal inlining; when disabled, checks are branch‑predictable and near zero‑overhead; when enabled, messages can be built lazily via `clogf`/`clogenabled` so expensive work is skipped unless needed.
-- **Simple composition:** routes to any `AbstractLogger` sink (`ConsoleLogger`, custom sinks, or `LoggingExtras` combinators) and defers formatting/IO to the sink.
-- **Explicit component routing:** hierarchical group keys (`NTuple{N,Symbol}`) give precise control over noisy areas without imposing a separate handler/formatter stack.
-
-> - Choose **Memento.jl** if you want a *self-contained* logging framework with built-in handlers/formatters and hierarchical named loggers.
-> - Choose **HierarchicalLogging.jl** if you want *stdlib-compatible* hierarchical control keyed to modules/keys with recursive level management.
-> - Choose **ComponentLogging.jl** if you want a *high‑performance*, type‑stable, component (group) router atop stdlib `Base.CoreLogging`, with lazy message evaluation and minimal overhead when disabled; formatting/IO remains in the sink (`ConsoleLogger`, custom sinks, `LoggingExtras`, etc.).
-
-### Benchmarking
-
-This project uses [BenchLedger](https://julialogging.github.io/ComponentLogging.jl/benchmarks/) to continuously track benchmark results over time.
-
-We benchmark two paths under identical thresholds:
-1) filtered (`min=Error`, log at `Info`) — hot path in production;
-2) enabled (`min=Info`, log at `Info`).
-
-All three systems log the same short string to a null sink (no I/O). Keys test four depths: `default`, `:opti`, `(:a,:b)`, `(:a,…,:h)`.
-
-In these benchmarks, ComponentLogging (CL) checks group-level thresholds and, if allowed, calls the sink’s `handle_message` directly, bypassing the stdlib `@info` macro path. HierarchicalLogging (HL) is exercised via the stdlib macros (macro expansion + metadata before reaching the logger). Memento is exercised via its own API and internal handler pipeline. With all three routed to a null/devnull sink, the results mainly measure macro/dispatch/routing overhead, not I/O. The test script is in "benchmark/bench_CL_HL_Me.jl".
-
-| system | path | key | time (ns) | allocs | memory (B) |
-|:--|:--|:--|--:|--:|--:|
-| CL | enabled | default/str | 9 | 0 | 0 |
-| CL | enabled | opti/str | 9 | 0 | 0 |
-| CL | enabled | tuple2/str | 15 | 0 | 0 |
-| CL | enabled | tuple8/str | 144 | 0 | 0 |
-| CL | filtered | default | 2 | 0 | 0 |
-| CL | filtered | opti | 2 | 0 | 0 |
-| CL | filtered | tuple2 | 2 | 0 | 0 |
-| CL | filtered | tuple8 | 2 | 0 | 0 |
-| HL | enabled | default/str | 2189 | 47 | 1984 |
-| HL | enabled | opti/str | 2178 | 47 | 1984 |
-| HL | enabled | tuple2/str | 2478 | 51 | 2176 |
-| HL | enabled | tuple8/str | 4857 | 77 | 5728 |
-| HL | filtered | default | 2178 | 47 | 1984 |
-| HL | filtered | opti | 2178 | 47 | 1984 |
-| HL | filtered | tuple2 | 2467 | 51 | 2176 |
-| HL | filtered | tuple8 | 4814 | 77 | 5728 |
-| Memento | enabled | a.b..8/str | 2656 | 76 | 4096 |
-| Memento | enabled | a.b/str | 1050 | 31 | 1408 |
-| Memento | enabled | opti/str | 770 | 24 | 1072 |
-| Memento | enabled | root/str | 622 | 22 | 800 |
-| Memento | filtered | a.b | 1040 | 31 | 1408 |
-| Memento | filtered | a.b..8 | 2700 | 76 | 4096 |
-| Memento | filtered | opti | 770 | 24 | 1072 |
-| Memento | filtered | root | 621 | 22 | 800 |
-
-<p><small>
-Note: Julia v1.10.10, BenchmarkTools v1.6.0, ComponentLogging v0.1.0,
-HierarchicalLogging v1.0.2, Memento v1.4.1; Windows x86_64, JULIA_NUM_THREADS=1, -O2.
-</small></p>
-
-## Logger scoping semantics compared with Julia’s stdlib Logging
-
-**Stdlib Logging (task-local)** treats loggers as task-local: messages emitted via `@info`/`@warn`/... go to the current task’s logger (set with `with_logger`/`global_logger`). New tasks inherit the parent’s logger upon creation, so concurrent tasks can run with different loggers, levels, and sinks simultaneously.
-
-**ComponentLogging (module/group-routed)**, by design, exposes a module/group-routed policy: the same module or group (e.g., `:core` or `(:db, :read)`) is routed through the same rules and sink by default—ideal for component-wide noise control and predictable behavior across tasks.
-
-**Scope of intent:** `ComponentLogging` is not aimed at per-task logger isolation by default. Its primary goal is stable, component-level policies with very low overhead on filtered paths.
+> - Choose **Memento.jl** for a self-contained logging framework with hierarchical named loggers and a rich handler/formatter system.
+> - Choose **HierarchicalLogging.jl** for stdlib-compatible hierarchical control over hierarchically related objects with recursive level management.
+> - Choose **ComponentLogging.jl** for module-scoped hierarchical control, very low filtered-call overhead, direct composition with `AbstractLogger` sinks, and a hierarchy that can double as a runtime control plane.
 
 [1]: https://invenia.github.io/Memento.jl/latest/ "Home · Memento.jl"
 [2]: https://github.com/curtd/HierarchicalLogging.jl "GitHub - curtd/HierarchicalLogging.jl: Loggers, loggers everywhere"
