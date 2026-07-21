@@ -33,7 +33,7 @@ clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
     clogenabled(logger, group, Info)
 
 ## clogf
-@inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F<:Function}
+@inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F}
     grp = _tokey(group)
     lvl = LogLevel(level)
     if _enabled(logger, lvl, grp; _module, id=nothing)
@@ -168,8 +168,7 @@ macro clogf(args...)
     end
 
     mod, file, line = Base.CoreLogging.@_sourceinfo
-    id = Base.CoreLogging.log_record_id(mod, lvl_ex, body_ex,
-        (Expr(:(=), :_group, grp_ast),))
+    id = Base.CoreLogging.log_record_id(mod, lvl_ex, body_ex, (Expr(:(=), :_group, grp_ast),))
     return :(
         let CL = ComponentLogging,
             _lg = ComponentLogging.get_logger($mod),
@@ -192,9 +191,7 @@ macro clogf(args...)
     )
 end
 
-#! format: off
 macro cdebug(args...) esc(:(ComponentLogging.@clog -2000 $(args...))) end
 macro cinfo(args...)  esc(:(ComponentLogging.@clog     0 $(args...))) end
 macro cwarn(args...)  esc(:(ComponentLogging.@clog  1000 $(args...))) end
 macro cerror(args...) esc(:(ComponentLogging.@clog  2000 $(args...))) end
-#! format: on

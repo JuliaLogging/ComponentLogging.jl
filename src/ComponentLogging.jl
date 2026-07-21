@@ -94,9 +94,7 @@ end
         end)
     end
     push!(steps, :(return get(rules, (DEFAULT_SYM,), Info)::LogLevel))
-    return :(@inbounds begin
-        $(steps...)
-    end)
+    return :(@inbounds begin $(steps...) end)
 end
 
 Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.state).min_level
