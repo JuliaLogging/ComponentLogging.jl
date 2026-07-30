@@ -98,10 +98,10 @@ macro clog(args...)
         (Expr(:(=), :_group, grp_ast),))
     return :(
         let CL=ComponentLogging,
-            _lg = ComponentLogging.get_logger($mod),
-            _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
-            _grp = $grp_ast,
-            _id = $(QuoteNode(id))
+            _lg=ComponentLogging.get_logger($mod),
+            _lvl=ComponentLogging.LogLevel($(esc(lvl_ex))),
+            _grp=$grp_ast,
+            _id=$(QuoteNode(id))
 
             if CL.Logging.shouldlog(_lg, _lvl, $mod, _grp, _id)
                 CL.Logging.handle_message(_lg, _lvl, $msg_tuple, $mod, _grp, _id, $file, $line)
@@ -123,9 +123,9 @@ macro clogenabled(group, lvl)
 
     return :(
         let CL=ComponentLogging,
-            _lg = ComponentLogging.get_logger(@__MODULE__),
-            _lvl = ComponentLogging.LogLevel($(esc(lvl))),
-            _grp = $grp_ast
+            _lg=ComponentLogging.get_logger(@__MODULE__),
+            _lvl=ComponentLogging.LogLevel($(esc(lvl))),
+            _grp=$grp_ast
 
             CL.Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
         end
@@ -161,10 +161,10 @@ macro clogf(args...)
     id = Base.CoreLogging.log_record_id(mod, lvl_ex, body_ex, (Expr(:(=), :_group, grp_ast),))
     return :(
         let CL=ComponentLogging,
-            _lg = ComponentLogging.get_logger($mod),
-            _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
-            _grp = $grp_ast,
-            _id = $(QuoteNode(id))
+            _lg=ComponentLogging.get_logger($mod),
+            _lvl=ComponentLogging.LogLevel($(esc(lvl_ex))),
+            _grp=$grp_ast,
+            _id=$(QuoteNode(id))
 
             if CL.Logging.shouldlog(_lg, _lvl, $mod, _grp, _id)
                 _msg = $(esc(body_ex))
