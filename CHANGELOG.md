@@ -5,6 +5,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.0] - 2026-07-30
 ### Changed
 - Improved thread safety for component log-level updates and module logger bindings, allowing logging configuration to be changed safely in concurrent applications.
 - Significantly reduced the overhead of disabled log calls, especially when using the explicit `clog`, `clogf`, and `clogenabled` function APIs.
@@ -13,6 +15,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Changed `with_min_level` from a task-local override to a temporary global minimum-level override for the target `ComponentLogger`. The temporary level applies to all tasks and threads using that logger for the duration of the callback and is restored afterward.
 
 ### Fixed
+- `ComponentLogger` now consistently respects the configured sink logger's own filtering rules when deciding whether a message is enabled.
 - Fixed unnecessary allocations and substantial performance regressions introduced in filtered logging paths.
 - Fixed potential data races when log-level rules or module logger bindings are updated concurrently.
 
@@ -97,7 +100,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.6...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.2.0...v0.3.0
+[0.2.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.5...v0.1.6
 [0.1.5]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.4...v0.1.5
 [0.1.4]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.3...v0.1.4

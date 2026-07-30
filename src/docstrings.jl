@@ -42,11 +42,12 @@ component-based minimum level rules. Rules are defined on paths of symbols
 ComponentLogger
 
 """
-    set_log_level!(logger, group, lvl) -> ComponentLogger
+    set_log_level!(logger, group, lvl, args...) -> ComponentLogger
 
 Set or update the minimum level for a specific component `group` on `logger`.
-`group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel` or `Integer`.
-If `lvl` is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and
+`group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel`, `Integer`, or `Bool`.
+Additional `args...` are accepted as more `group, level` pairs and are applied atomically in one update.
+If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and
 `false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
 Updates `rules` under `logger.lock` and keeps the atomic `min_level` cache consistent.
 """

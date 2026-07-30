@@ -215,6 +215,46 @@ end
         @test clogenabled(logger, :sw) == true
     end
 
+    @testset "set_log_level! batch updates" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Warn, :b => Error); sink)
+        oldstate = @atomic :acquire logger.state
+        oldrules = oldstate.rules
+
+        result = ComponentLogging.set_log_level!(
+            logger,
+            :a, Debug,
+            :b, false,
+            (:c, :d), Info,
+            :e, true,
+        )
+        newstate = @atomic :acquire logger.state
+
+        @test result === logger
+        @test newstate !== oldstate
+        @test newstate.rules !== oldrules
+        @test oldrules[(:a,)] === Warn
+        @test oldrules[(:b,)] === Error
+        @test newstate.rules[(:a,)] === Debug
+        @test newstate.rules[(:b,)] === LogLevel(1)
+        @test newstate.rules[(:c, :d)] === Info
+        @test newstate.rules[(:e,)] === Info
+        @test Logging.min_enabled_level(logger) === Debug
+        @test clogenabled(logger, :a, Debug)
+        @test !clogenabled(logger, :b)
+        @test clogenabled(logger, (:c, :d))
+        @test clogenabled(logger, :e)
+    end
+
+    @testset "set_log_level! batch rejects odd arguments" begin
+        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Warn); sink)
+        oldstate = @atomic :acquire logger.state
+
+        @test_throws ArgumentError ComponentLogging.set_log_level!(logger, :a, Debug, :b)
+        @test (@atomic :acquire logger.state) === oldstate
+        @test clogenabled(logger, :a, Warn)
+        @test !clogenabled(logger, :a, Debug)
+    end
+
     @testset "@clog macro literal group" begin
         clearbuf!()
         @clog :core Error "macro works"

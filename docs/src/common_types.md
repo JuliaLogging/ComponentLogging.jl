@@ -45,6 +45,16 @@ set_log_level!(logger, :solver, 1000)
 set_log_level!(logger, (:solver, :iteration), -1000)
 ```
 
+Multiple `group, level` pairs can also be applied atomically in one call:
+
+```julia
+set_log_level!(logger,
+    :solver, 1000,
+    (:solver, :iteration), -1000,
+    (:solver, :heuristics), false,
+)
+```
+
 Boolean values provide a compact switch interface:
 
 ```julia

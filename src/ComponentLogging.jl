@@ -13,6 +13,10 @@ const Default_Sym = :__default__
 _tokey(k::Symbol)::NTuple{1,Symbol} = (k,)
 _tokey(k::NTuple{N,Symbol}) where {N} = k
 _tokey(x) = throw(ArgumentError("group must be Symbol or $RuleKey, got $(typeof(x))"))
+_tolevel(lvl::LogLevel)::LogLevel = lvl
+_tolevel(lvl::Integer)::LogLevel = LogLevel(lvl)
+_tolevel(on::Bool)::LogLevel = on ? Info : LogLevel(1)
+_tolevel(x) = throw(ArgumentError("level must be LogLevel, Integer, or Bool, got $(typeof(x))"))
 
 msg_to_tuple(x::Tuple) = x
 msg_to_tuple(x) = (x,)
@@ -41,14 +45,14 @@ function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
         if !(v isa LogLevel || v isa Integer)
             throw(ArgumentError("the value of dict should be either LogLevel or Integer, got $(typeof(v))"))
         end
-        rules[_tokey(k)] = LogLevel(v)
+        rules[_tokey(k)] = _tolevel(v)
     end
     return ComponentLogger(rules; sink)
 end
 
-function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLevel})
+function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLevel,Bool})
     grp = _tokey(group)
-    lvl = LogLevel(lvl)
+    lvl = _tolevel(lvl)
     @lock logger.lock begin
         state = @atomic :acquire logger.state
         rules = copy(state.rules)
@@ -59,8 +63,22 @@ function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLe
     return logger
 end
 
-set_log_level!(logger::ComponentLogger, group, on::Bool) =
-    set_log_level!(logger, group, on ? 0 : 1)
+function set_log_level!(logger::ComponentLogger, group, lvl, args...)
+    iseven(length(args)) || throw(ArgumentError("arguments after logger must be group/level pairs"))
+    @lock logger.lock begin
+        state = @atomic :acquire logger.state
+        rules = copy(state.rules)
+        rules[_tokey(group)] = _tolevel(lvl)
+
+        @inbounds for i in 1:2:length(args)
+            rules[_tokey(args[i])] = _tolevel(args[i + 1])
+        end
+
+        state = _LoggerState(rules, minimum(values(rules)))
+        @atomic :release logger.state = state
+    end
+    return logger
+end
 
 function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) where {F}
     lvl = LogLevel(lvl)

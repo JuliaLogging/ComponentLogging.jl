@@ -23,6 +23,16 @@ set_log_level!(logger, group, true)
 set_log_level!(logger, group, false)
 ```
 
+It also accepts multiple `group, level` pairs in one call:
+
+```julia
+set_log_level!(logger,
+    (:solver, :presolve), true,
+    (:solver, :heuristics), false,
+    (:solver, :diagnostics), -1000,
+)
+```
+
 Internally, `true` sets the group threshold to `0` (`Info`) and `false` sets it to `1`. Since the no-level form of `clogenabled` checks at `Info`, this gives a compact on/off interface:
 
 ```julia
