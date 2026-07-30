@@ -8,7 +8,7 @@ export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf, @forward_logger
 
 const RuleKey = NTuple{N,Symbol} where {N}
-const DEFAULT_SYM = :__default__
+const Default_Sym = :__default__
 
 _tokey(k::Symbol)::NTuple{1,Symbol} = (k,)
 _tokey(k::NTuple{N,Symbol}) where {N} = k
@@ -29,14 +29,14 @@ mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
     lock::ReentrantLock
 end
 
-function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info); sink=ConsoleLogger(Debug))
+function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((Default_Sym,) => Info); sink=ConsoleLogger(Debug))
     rules = copy(rules)
     state = _LoggerState(rules, minimum(values(rules)))
     return ComponentLogger(state, sink, ReentrantLock())
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
-    rules = sizehint!(Dict{RuleKey,LogLevel}((DEFAULT_SYM,) => Info), length(nonstdrules) + 1)
+    rules = sizehint!(Dict{RuleKey,LogLevel}((Default_Sym,) => Info), length(nonstdrules) + 1)
     for (k, v) in nonstdrules
         if !(v isa LogLevel || v isa Integer)
             throw(ArgumentError("the value of dict should be either LogLevel or Integer, got $(typeof(v))"))
@@ -48,11 +48,11 @@ end
 
 function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLevel})
     grp = _tokey(group)
-    lv = LogLevel(lvl)
+    lvl = LogLevel(lvl)
     @lock logger.lock begin
         state = @atomic :acquire logger.state
         rules = copy(state.rules)
-        rules[grp] = lv
+        rules[grp] = lvl
         state = _LoggerState(rules, minimum(values(rules)))
         @atomic :release logger.state = state
     end
@@ -63,11 +63,11 @@ set_log_level!(logger::ComponentLogger, group, on::Bool) =
     set_log_level!(logger, group, on ? 0 : 1)
 
 function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) where {F}
-    lv = LogLevel(lvl)
+    lvl = LogLevel(lvl)
     lock(logger.lock)
     try
         oldstate = @atomic :acquire logger.state
-        @atomic :release logger.state = _LoggerState(oldstate.rules, lv)
+        @atomic :release logger.state = _LoggerState(oldstate.rules, lvl)
         try
             return f()
         finally
@@ -93,8 +93,23 @@ end
             lvl !== nothing && return lvl::LogLevel
         end)
     end
-    push!(steps, :(return get(rules, (DEFAULT_SYM,), Info)::LogLevel))
+    push!(steps, :(return get(rules, (Default_Sym,), Info)::LogLevel))
     return :(@inbounds begin $(steps...) end)
+end
+
+@inline function _enabled(logger::AbstractLogger, level::LogLevel, group; _module, id)
+    level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, group, id)
+end
+
+@inline function _enabled(logger::ComponentLogger, level::LogLevel, group; _module, id)
+    state = @atomic :acquire logger.state
+    sink = logger.sink
+    level >= state.min_level && level >= _effective_level(state.rules, group) && level >= Logging.min_enabled_level(sink) && Logging.shouldlog(sink, level, _module, group, id)
+end
+
+@inline function _enabled(logger::ComponentLogger{PlainLogger}, level::LogLevel, group; _module, id)
+    state = @atomic :acquire logger.state
+    level >= state.min_level && level >= _effective_level(state.rules, group)
 end
 
 Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.state).min_level
@@ -148,7 +163,7 @@ end
 ## Module binding macro
 macro bind_logger(args...)
     sink_ex  = nothing
-    rules_ex = :(Dict{ComponentLogging.RuleKey,LogLevel}((ComponentLogging.DEFAULT_SYM,) => Logging.Info))
+    rules_ex = :(Dict{ComponentLogging.RuleKey,LogLevel}((ComponentLogging.Default_Sym,) => Logging.Info))
     mod_ex   = :(@__MODULE__)
 
     for a in args
@@ -207,8 +222,8 @@ function _build_children(keys::AbstractVector{<:RuleKey})
 end
 
 function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
-    align_style::Symbol = :global,   # :global / :per_depth / others = no alignment
-    gutter::Int         = 4
+    align_style::Symbol=:global, # :global / :per_depth / others = no alignment
+    gutter::Int=4
 )
     paths = collect(RuleKey, keys(rules))
     roots, children = _build_children(paths)

@@ -1,12 +1,3 @@
-@inline function _enabled(logger::AbstractLogger, level::LogLevel, grp; _module, id)
-    level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, grp, id)
-end
-
-@inline function _enabled(logger::ComponentLogger, level::LogLevel, grp; _module, id)
-    state = @atomic :acquire logger.state
-    level >= state.min_level && level >= _effective_level(state.rules, grp)
-end
-
 resolve_logger(logger::AbstractLogger) = logger
 resolve_logger(logger_ref::Base.RefValue{<:AbstractLogger}) = logger_ref[]
 
@@ -86,7 +77,7 @@ macro clog(args...)
     is_symtuple_lit(ex) = ex isa Expr && ex.head === :tuple &&
                           all(a -> (a isa QuoteNode && a.value isa Symbol), ex.args)
 
-    grp_ast = :((ComponentLogging.DEFAULT_SYM,))  # default group
+    grp_ast = :((ComponentLogging.Default_Sym,))  # default group
 
     looks_like_group = (args[1] isa QuoteNode) || (args[1] isa Expr && args[1].head === :tuple)
     if looks_like_group
@@ -107,7 +98,7 @@ macro clog(args...)
     id = Base.CoreLogging.log_record_id(mod, lvl_ex, Expr(:tuple, msg_ps...),
         (Expr(:(=), :_group, grp_ast),))
     return :(
-        let CL = ComponentLogging,
+        let CL=ComponentLogging,
             _lg = ComponentLogging.get_logger($mod),
             _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
             _grp = $grp_ast,
@@ -132,7 +123,7 @@ macro clogenabled(group, lvl)
         "or a tuple literal of Symbols like (:net,:http)")
 
     return :(
-        let CL = ComponentLogging,
+        let CL=ComponentLogging,
             _lg = ComponentLogging.get_logger(@__MODULE__),
             _lvl = ComponentLogging.LogLevel($(esc(lvl))),
             _grp = $grp_ast
@@ -150,7 +141,7 @@ macro clogf(args...)
     is_symtuple_lit(ex) = ex isa Expr && ex.head === :tuple &&
                           all(a -> (a isa QuoteNode && a.value isa Symbol), ex.args)
 
-    grp_ast = :((ComponentLogging.DEFAULT_SYM,))  # default group
+    grp_ast = :((ComponentLogging.Default_Sym,))  # default group
 
     looks_like_group = (args[1] isa QuoteNode) || (args[1] isa Expr && args[1].head === :tuple)
     if looks_like_group
@@ -170,7 +161,7 @@ macro clogf(args...)
     mod, file, line = Base.CoreLogging.@_sourceinfo
     id = Base.CoreLogging.log_record_id(mod, lvl_ex, body_ex, (Expr(:(=), :_group, grp_ast),))
     return :(
-        let CL = ComponentLogging,
+        let CL=ComponentLogging,
             _lg = ComponentLogging.get_logger($mod),
             _lvl = ComponentLogging.LogLevel($(esc(lvl_ex))),
             _grp = $grp_ast,
