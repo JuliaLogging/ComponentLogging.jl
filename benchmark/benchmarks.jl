@@ -11,7 +11,7 @@ Logging.catch_exceptions(::NullSinkLogger) = false
 
 import ComponentLogging as CL
 const RK = CL.RuleKey
-const DEFAULT = (CL.Default_Sym,)
+const DEFAULT = try (CL.Default_Sym,) catch; (CL.DEFAULT_SYM,) end
 
 ## Create logger
 # Explicitly add rules for: default group, :opti, (:a,:b), and (:a,:b,:c,:d,:e,:f,:g,:h)
