@@ -5,19 +5,18 @@ resolve_logger(logger_ref::Base.RefValue{<:AbstractLogger}) = logger_ref[]
 function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
-    _enabled(logger, lvl, grp; _module, id) && Logging.handle_message(logger, lvl, message, _module, grp, id, file, line; kwargs...)
+    Logging.shouldlog(logger, lvl, _module, grp, id) && Logging.handle_message(logger, lvl, message, _module, grp, id, file, line; kwargs...)
     nothing
 end
 
-clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, message...;
-    _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
+clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
     clog(logger, group, Info, message...; _module, id, file, line, kwargs...)
 
 ## clogenabled
 function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
     grp = _tokey(group)
     lvl = LogLevel(level)
-    return _enabled(logger, lvl, grp; _module=nothing, id=nothing)
+    return Logging.shouldlog(logger, lvl, nothing, grp, nothing)
 end
 
 clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
@@ -27,7 +26,7 @@ clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
 @inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F}
     grp = _tokey(group)
     lvl = LogLevel(level)
-    if _enabled(logger, lvl, grp; _module, id=nothing)
+    if Logging.shouldlog(logger, lvl, _module, grp, nothing)
         msg = f()
         if msg !== nothing
             Logging.handle_message(logger, lvl, msg_to_tuple(msg), _module, grp, nothing, file, line)
@@ -104,7 +103,7 @@ macro clog(args...)
             _grp = $grp_ast,
             _id = $(QuoteNode(id))
 
-            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=_id)
+            if CL.Logging.shouldlog(_lg, _lvl, $mod, _grp, _id)
                 CL.Logging.handle_message(_lg, _lvl, $msg_tuple, $mod, _grp, _id, $file, $line)
             end
             nothing
@@ -128,7 +127,7 @@ macro clogenabled(group, lvl)
             _lvl = ComponentLogging.LogLevel($(esc(lvl))),
             _grp = $grp_ast
 
-            CL._enabled(_lg, _lvl, _grp; _module=@__MODULE__, id=nothing)
+            CL.Logging.shouldlog(_lg, _lvl, @__MODULE__, _grp, nothing)
         end
     )
 end
@@ -167,7 +166,7 @@ macro clogf(args...)
             _grp = $grp_ast,
             _id = $(QuoteNode(id))
 
-            if CL._enabled(_lg, _lvl, _grp; _module=$mod, id=_id)
+            if CL.Logging.shouldlog(_lg, _lvl, $mod, _grp, _id)
                 _msg = $(esc(body_ex))
                 if _msg isa Function
                     _msg = _msg()

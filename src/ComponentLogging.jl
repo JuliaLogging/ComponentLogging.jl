@@ -97,25 +97,26 @@ end
     return :(@inbounds begin $(steps...) end)
 end
 
-@inline function _enabled(logger::AbstractLogger, level::LogLevel, group; _module, id)
-    level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, group, id)
-end
+Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.state).min_level
 
-@inline function _enabled(logger::ComponentLogger, level::LogLevel, group; _module, id)
+function Logging.shouldlog(logger::ComponentLogger, level, _module, group, id)
     state = @atomic :acquire logger.state
-    sink = logger.sink
-    level >= state.min_level && level >= _effective_level(state.rules, group) && level >= Logging.min_enabled_level(sink) && Logging.shouldlog(sink, level, _module, group, id)
+    level >= state.min_level && level >= _effective_level(state.rules, group) && _shouldlog(logger.sink, level, _module, group, id)
 end
 
-@inline function _enabled(logger::ComponentLogger{PlainLogger}, level::LogLevel, group; _module, id)
+@inline function Logging.shouldlog(logger::ComponentLogger{PlainLogger}, level, _, group, _)
     state = @atomic :acquire logger.state
     level >= state.min_level && level >= _effective_level(state.rules, group)
 end
 
-Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.state).min_level
+@inline function _shouldlog(logger::AbstractLogger, level::LogLevel, _module, group, id)
+    level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, group, id)
+end
 
-Logging.shouldlog(g::ComponentLogger, level, _module, group, id) =
-    level >= _effective_level((@atomic :acquire g.state).rules, group)
+@inline function _shouldlog(logger::ComponentLogger, level::LogLevel, _, group, _)
+    state = @atomic :acquire logger.state
+    level >= state.min_level && level >= _effective_level(state.rules, group)
+end
 
 Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...) =
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)

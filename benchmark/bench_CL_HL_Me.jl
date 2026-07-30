@@ -12,7 +12,7 @@ Logging.catch_exceptions(::NullSinkLogger) = false
 #──────────────────────────────────────────────────────────────────────────────────────────
 import ComponentLogging as CL
 const RK = CL.RuleKey
-const DEFAULT = (CL.DEFAULT_SYM,)
+const DEFAULT = (CL.Default_Sym,)
 
 # Explicitly add rules for: default group, :opti, (:a,:b), and (:a,:b,:c,:d,:e,:f,:g,:h)
 const TUP2 = (:a, :b)
