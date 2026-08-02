@@ -4,7 +4,7 @@ const Target_Package_Path = abspath(get(ENV, "BENCH_TARGET_PATH", joinpath(@__DI
 Pkg.develop(path=Target_Package_Path)
 Pkg.instantiate()
 
-using BenchmarkTools, Dates, SHA, JSON, UUIDs
+using BenchmarkTools, Dates, SHA, JSON, UUIDs, LinearAlgebra
 using DBInterface, SQLite
 
 # ⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄⌄
@@ -20,19 +20,17 @@ const Benchledger_Metadata_Defaults = (
 )
 # ⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃⌃
 
-const Results_DB_Path = let path = strip(get(ENV, "BENCH_DB_PATH", ""))
+const Results_DB_Path = let path=strip(get(ENV, "BENCH_DB_PATH", ""))
     isempty(path) && error("BENCH_DB_PATH must be set to the SQLite database file to update.")
     abspath(path)
 end
 
-const Benchledger_Schema_Version = "5"
+const Benchledger_Schema_Version = "6"
 
 iso_utc_now() = Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS.sss") * "Z"
 
 struct BenchmarkMetricRow
-    benchmark_path::Vector{String}
-    benchmark_id::String
-    benchmark_label::String
+    benchmark_key::Vector{String}
     metric_name::String
     statistic::String
     unit::String
@@ -83,44 +81,11 @@ function detect_dirty_state(is_git::Bool)
     end
 end
 
-function detect_cpu_model()
-    buf = IOBuffer()
-    Sys.cpu_summary(buf)
-    lines = split(String(take!(buf)), '\n'; keepempty=false)
-    isempty(lines) ? string(Sys.MACHINE) : rstrip(first(lines), [':', ' '])
-end
+const Probe_Schema_Version = 2
 
-function detect_os_release()
-    name = lowercase(string(Sys.KERNEL))
-    version = ""
-    if Sys.islinux() && isfile("/etc/os-release")
-        os_release = Dict{String,String}()
-        for line in eachline("/etc/os-release")
-            isempty(line) && continue
-            startswith(line, '#') && continue
-            fields = split(line, '='; limit=2)
-            length(fields) == 2 || continue
-            os_release[first(fields)] = strip(last(fields), ['"'])
-        end
-        name = get(os_release, "ID", name)
-        version = get(os_release, "VERSION_ID", "")
-    elseif Sys.isapple()
-        try
-            version = readchomp(`sw_vers -productVersion`)
-        catch
-        end
-    end
-    (; name, version)
-end
-
-function detect_kernel_version()
-    if Sys.isunix()
-        try
-            return readchomp(`uname -r`)
-        catch
-        end
-    end
-    return ""
+function format_memory_bytes(bytes::Integer)
+    gib = Float64(bytes) / 1024^3
+    isinteger(gib) ? string(Int(gib), " GiB") : string(round(gib; digits=1), " GiB")
 end
 
 function loaded_module_by_name(name::Symbol)
@@ -151,90 +116,174 @@ function module_call_version(_module::Module, name::Symbol)
     end
 end
 
-function detect_nvidia_gpu()
-    output = try
-        readchomp(`nvidia-smi --query-gpu=name,memory.total,driver_version --format=csv,noheader,nounits`)
-    catch
-        return (gpus=Dict{String,Any}[], driver_version="")
-    end
-    isempty(strip(output)) && return (gpus=Dict{String,Any}[], driver_version="")
-
-    counts = Dict{Tuple{String,Int},Int}()
-    driver_versions = Set{String}()
-    for line in split(output, '\n'; keepempty=false)
-        fields = strip.(split(line, ','; limit=3))
-        length(fields) >= 2 || continue
-        model = fields[1]
-        memory_mib = tryparse(Int, fields[2])
-        memory_mib === nothing && continue
-        key = (model, memory_mib * 1024^2)
-        counts[key] = get(counts, key, 0) + 1
-        length(fields) == 3 && !isempty(fields[3]) && push!(driver_versions, fields[3])
-    end
-
-    gpus = Dict{String,Any}[]
-    for (model, memory_bytes) in sort!(collect(keys(counts)); by=x -> (x[1], x[2]))
-        push!(gpus, Dict{String,Any}(
-            "vendor" => "NVIDIA",
-            "model" => model,
-            "memory_bytes" => memory_bytes,
-            "count" => counts[(model, memory_bytes)],
-        ))
-    end
-    driver_version = isempty(driver_versions) ? "" : first(sort!(collect(driver_versions)))
-    (; gpus, driver_version)
+function blas_implementation_name(library::AbstractString)
+    name = lowercase(String(library))
+    occursin("openblas", name) && return "openblas"
+    occursin("mkl", name) && return "mkl"
+    (occursin("accelerate", name) || occursin("veclib", name)) && return "accelerate"
+    occursin("blis", name) && return "blis"
+    occursin("flexiblas", name) && return "flexiblas"
+    occursin("atlas", name) && return "atlas"
+    "unknown"
 end
 
-function visible_gpu_count(detected_count::Int)
-    for name in ("CUDA_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES")
-        haskey(ENV, name) || continue
-        raw = strip(ENV[name])
-        isempty(raw) && return 0
-        lowercase(raw) in ("-1", "none", "nodevfiles") && return 0
-        devices = filter(!isempty, strip.(split(raw, ','; keepempty=false)))
-        return length(devices)
+function detect_blas()
+    config_text = try
+        sprint(show, MIME"text/plain"(), LinearAlgebra.BLAS.get_config())
+    catch
+        ""
     end
-    detected_count > 0 ? detected_count : nothing
+
+    libraries = Dict{String,Any}[]
+    seen = Set{Tuple{String,String}}()
+    for match in eachmatch(r"\[\s*(ILP64|LP64)\s*\]\s+([^\r\n]+)", config_text)
+        interface = lowercase(String(match.captures[1]))
+        implementation = blas_implementation_name(strip(String(match.captures[2])))
+        key = (implementation, interface)
+        key in seen && continue
+        push!(seen, key)
+        push!(libraries, Dict{String,Any}(
+            "implementation" => implementation,
+            "interface" => interface,
+        ))
+    end
+
+    if isempty(libraries)
+        push!(libraries, Dict{String,Any}(
+            "implementation" => blas_implementation_name(config_text),
+        ))
+    else
+        sort!(libraries; by=library -> (
+            String(library["implementation"]),
+            String(get(library, "interface", "")),
+        ))
+    end
+
+    blas = Dict{String,Any}("libraries" => libraries)
+    threads = try
+        LinearAlgebra.BLAS.get_num_threads()
+    catch
+        nothing
+    end
+    threads isa Integer && threads > 0 && (blas["threads"] = Int(threads))
+    blas
+end
+
+function probe_binary_name()
+    Sys.iswindows() ? "benchledger-probe.exe" : "benchledger-probe"
+end
+
+function resolve_probe_path()
+    explicit = strip(get(ENV, "BENCH_PROBE_PATH", ""))
+    if !isempty(explicit)
+        path = abspath(explicit)
+        isfile(path) || error("BENCH_PROBE_PATH does not point to a file: $(path).")
+        return path
+    end
+
+    adjacent = joinpath(@__DIR__, probe_binary_name())
+    isfile(adjacent) && return adjacent
+
+    path_entry = Sys.which("benchledger-probe")
+    path_entry === nothing || return String(path_entry)
+    error("benchledger-probe was not found. Set BENCH_PROBE_PATH, place $(probe_binary_name()) beside runbench.jl, or add it to PATH.")
+end
+
+function require_probe_object(value, field::AbstractString)
+    value isa AbstractDict || error("Invalid benchledger-probe output: $(field) must be a JSON object.")
+    Dict{String,Any}(String(key) => item for (key, item) in pairs(value))
+end
+
+function require_probe_string(value, field::AbstractString)
+    value isa AbstractString && !isempty(value) || error("Invalid benchledger-probe output: $(field) must be a nonempty string.")
+    String(value)
+end
+
+function collect_probe()
+    path = resolve_probe_path()
+    stdout_buffer = IOBuffer()
+    stderr_buffer = IOBuffer()
+    process = try
+        run(pipeline(ignorestatus(Cmd([path])), stdout=stdout_buffer, stderr=stderr_buffer))
+    catch err
+        error("Failed to start benchledger-probe at $(path): $(sprint(showerror, err)).")
+    end
+
+    stdout_text = String(take!(stdout_buffer))
+    stderr_text = strip(String(take!(stderr_buffer)))
+    if !success(process)
+        detail = isempty(stderr_text) ? "no diagnostic output" : stderr_text
+        error("benchledger-probe failed with exit code $(process.exitcode): $(detail).")
+    end
+    isempty(strip(stdout_text)) && error("benchledger-probe returned empty output.")
+
+    document = try
+        JSON.parse(stdout_text; dicttype=Dict{String,Any})
+    catch err
+        error("benchledger-probe returned invalid JSON: $(sprint(showerror, err)).")
+    end
+    document = require_probe_object(document, "root")
+    schema_version = get(document, "schema_version", nothing)
+    schema_version == Probe_Schema_Version ||
+        error(string("Unsupported benchledger-probe schema version: ",
+        repr(schema_version), ". Expected ", Probe_Schema_Version, "."))
+
+    hardware = require_probe_object(get(document, "hardware", nothing), "hardware")
+    require_probe_string(get(hardware, "architecture", nothing), "hardware.architecture")
+    cpu = require_probe_object(get(hardware, "cpu", nothing), "hardware.cpu")
+    require_probe_string(get(cpu, "model", nothing), "hardware.cpu.model")
+
+    software = require_probe_object(get(document, "software", nothing), "software")
+    platform = require_probe_object(get(software, "platform", nothing), "software.platform")
+    kernel = require_probe_object(get(platform, "kernel", nothing), "software.platform.kernel")
+    isempty(kernel) && error("Invalid benchledger-probe output: software.platform.kernel must not be empty.")
+
+    diagnostics = require_probe_object(get(document, "diagnostics", nothing), "diagnostics")
+    collector = require_probe_object(get(document, "collector", nothing), "collector")
+    require_probe_string(get(collector, "name", nothing), "collector.name") == "fastfetch" ||
+        error("Invalid benchledger-probe output: collector.name must be fastfetch.")
+
+    Dict{String,Any}(
+        "hardware" => hardware,
+        "software" => software,
+        "diagnostics" => diagnostics,
+        "collector" => collector,
+    )
 end
 
 function detect_gpu_interface()
-    for (module_name, display_name) in ((:CUDA, "CUDA.jl"), (:AMDGPU, "AMDGPU.jl"), (:Metal, "Metal.jl"), (:oneAPI, "oneAPI.jl"))
+    interfaces = (
+        (:CUDA, "CUDA.jl", "CUDA"),
+        (:AMDGPU, "AMDGPU.jl", "ROCm"),
+        (:Metal, "Metal.jl", "Metal"),
+        (:oneAPI, "oneAPI.jl", "oneAPI"),
+    )
+    for (module_name, display_name, backend) in interfaces
         _module = loaded_module_by_name(module_name)
         _module === nothing && continue
-        interface = Dict{String,Any}("name" => display_name)
+        identity = Dict{String,Any}("name" => display_name)
         version = module_version_string(_module)
-        !isempty(version) && (interface["version"] = version)
-        return interface
+        !isempty(version) && (identity["version"] = version)
+        return (; module_name, _module, identity, backend)
     end
-    return Dict{String,Any}()
+    nothing
 end
 
-function detect_gpu_runtime(nvidia_driver_version::AbstractString)
-    runtime = Dict{String,Any}()
-    cuda = loaded_module_by_name(:CUDA)
-    amdgpu = loaded_module_by_name(:AMDGPU)
-
-    if cuda !== nothing
-        runtime["backend"] = "CUDA"
-        driver_version = module_call_version(cuda, :driver_version)
-        isempty(driver_version) && (driver_version = String(nvidia_driver_version))
-        !isempty(driver_version) && (runtime["driver"] = Dict{String,Any}("version" => driver_version))
-
-        runtime_version = module_call_version(cuda, :runtime_version)
+function detect_gpu_runtime(interface)
+    interface === nothing && return Dict{String,Any}()
+    runtime = Dict{String,Any}("backend" => interface.backend)
+    if interface.module_name == :CUDA
+        runtime_version = module_call_version(interface._module, :runtime_version)
         runtime_info = Dict{String,Any}("name" => "CUDA")
         !isempty(runtime_version) && (runtime_info["version"] = runtime_version)
         runtime["runtime"] = runtime_info
-    elseif amdgpu !== nothing
-        runtime["backend"] = "ROCm"
+    elseif interface.module_name == :AMDGPU
+        runtime_version = module_call_version(interface._module, :runtime_version)
         runtime_info = Dict{String,Any}("name" => "ROCm")
-        runtime_version = module_call_version(amdgpu, :runtime_version)
         !isempty(runtime_version) && (runtime_info["version"] = runtime_version)
         runtime["runtime"] = runtime_info
-    elseif !isempty(nvidia_driver_version)
-        runtime["driver"] = Dict{String,Any}("version" => String(nvidia_driver_version))
     end
-
-    return runtime
+    runtime
 end
 
 function normalize_code_state_id(value::AbstractString)
@@ -346,167 +395,137 @@ function make_code_state(source, measured_at::AbstractString)
     (; id, label, code_date, identity=canonical_json(identity), metadata=canonical_json(metadata))
 end
 
-function make_environment()
-    override = validate_object_keys(parse_object_env("BENCH_ENVIRONMENT"), "BENCH_ENVIRONMENT", ("label", "identity", "metadata"))
-    cpu_model = detect_cpu_model()
-    os_release = detect_os_release()
-    kernel_version = detect_kernel_version()
-    nvidia_gpu = detect_nvidia_gpu()
+function hardware_environment_label(identity::AbstractDict)
+    cpu = get(identity, "cpu", Dict{String,Any}())
+    cpu_model = cpu isa AbstractDict ? String(get(cpu, "model", "hardware")) : "hardware"
+    parts = String[cpu_model]
 
-    os_identity = Dict{String,Any}("name" => os_release.name)
-    !isempty(os_release.version) && (os_identity["version"] = os_release.version)
-    kernel_identity = Dict{String,Any}("name" => lowercase(string(Sys.KERNEL)))
-    !isempty(kernel_version) && (kernel_identity["version"] = kernel_version)
-    runtime_identity = Dict{String,Any}("name" => "Julia", "version" => string(VERSION))
+    memory = get(identity, "memory", nothing)
+    if memory isa AbstractDict
+        bytes = get(memory, "total_bytes", nothing)
+        bytes isa Integer && bytes > 0 && push!(parts, format_memory_bytes(bytes))
+    end
 
-    hardware_identity = Dict{String,Any}(
-        "cpu" => Dict{String,Any}(
-            "model" => cpu_model,
-            "logical_threads" => Sys.CPU_THREADS,
-        ),
-    )
-    !isempty(nvidia_gpu.gpus) && (hardware_identity["gpu"] = nvidia_gpu.gpus)
+    gpus = get(identity, "gpu", Any[])
+    if gpus isa AbstractVector
+        for gpu in gpus
+            gpu isa AbstractDict || continue
+            count = get(gpu, "count", 1)
+            model = String(get(gpu, "model", "GPU"))
+            count_value = count isa Integer && count > 0 ? Int(count) : 1
+            push!(parts, count_value == 1 ? model : string(count_value, "× ", model))
+        end
+    end
+    join(parts, " / ")
+end
 
-    execution_identity = Dict{String,Any}(
-        "processes" => 1,
-        "threads" => Threads.nthreads(),
-    )
-    detected_gpu_count = sum(Int(gpu["count"]) for gpu in nvidia_gpu.gpus; init=0)
-    visible_gpus = visible_gpu_count(detected_gpu_count)
-    visible_gpus === nothing || (execution_identity["gpu_devices"] = Dict{String,Any}("visible" => visible_gpus))
+function software_environment_label(identity::AbstractDict)
+    runtime = get(identity, "runtime", Dict{String,Any}())
+    runtime_name = runtime isa AbstractDict ? String(get(runtime, "name", "runtime")) : "runtime"
+    runtime_version = runtime isa AbstractDict ? String(get(runtime, "version", "")) : ""
+    runtime_label = isempty(runtime_version) ? runtime_name : string(runtime_name, " ", runtime_version)
 
-    identity = Dict{String,Any}(
-        "runtime" => runtime_identity,
-        "platform" => Dict{String,Any}(
-            "os" => os_identity,
-            "kernel" => kernel_identity,
-            "architecture" => string(Sys.ARCH),
-        ),
-        "hardware" => hardware_identity,
-        "execution" => execution_identity,
-    )
-    gpu_runtime = detect_gpu_runtime(nvidia_gpu.driver_version)
-    !isempty(gpu_runtime) && (identity["gpu_runtime"] = gpu_runtime)
+    platform = get(identity, "platform", Dict{String,Any}())
+    os = platform isa AbstractDict ? get(platform, "os", Dict{String,Any}()) : Dict{String,Any}()
+    os_name = os isa AbstractDict ? String(get(os, "name", "platform")) : "platform"
+    os_version = os isa AbstractDict ? String(get(os, "version", "")) : ""
+    os_label = isempty(os_version) ? os_name : string(os_name, " ", os_version)
 
-    # hardware.gpu, hardware.tpu, and hardware.npu are optional identity fields.
-    # TPU, NPU, and non-NVIDIA GPU details can be supplied through BENCH_ENVIRONMENT.identity.
-    merge_metadata!(identity, object_field(override, "identity", "BENCH_ENVIRONMENT"))
+    execution = get(identity, "execution", Dict{String,Any}())
+    threads = execution isa AbstractDict ? get(execution, "threads", nothing) : nothing
+    thread_label = threads isa Integer ? string(Int(threads), " threads") : ""
+    join(filter(!isempty, (runtime_label, os_label, thread_label)), " / ")
+end
 
-    metadata = object_field(override, "metadata", "BENCH_ENVIRONMENT")
+function make_hardware_environment(probe::AbstractDict)
+    override = validate_object_keys(parse_object_env("BENCH_HARDWARE_ENVIRONMENT"), "BENCH_HARDWARE_ENVIRONMENT", ("label", "identity", "metadata"))
+    identity = deepcopy(require_probe_object(get(probe, "hardware", nothing), "hardware"))
+    merge_metadata!(identity, object_field(override, "identity", "BENCH_HARDWARE_ENVIRONMENT"))
+    metadata = object_field(override, "metadata", "BENCH_HARDWARE_ENVIRONMENT")
 
     identity_json = canonical_json(identity)
-    id = string("env-", bytes2hex(sha256(codeunits(identity_json))))
-    label = haskey(override, "label") ? String(override["label"]) : string(cpu_model, " / Julia ", VERSION, " / ", Threads.nthreads(), " threads")
+    id = string("hardware-", bytes2hex(sha256(codeunits(identity_json))))
+    label = haskey(override, "label") ? String(override["label"]) : hardware_environment_label(identity)
     (; id, label, identity=identity_json, metadata=canonical_json(metadata))
 end
 
-function make_run_context(source, code_state, environment, measured_at::AbstractString)
+function make_software_environment(probe::AbstractDict)
+    override = validate_object_keys(parse_object_env("BENCH_SOFTWARE_ENVIRONMENT"), "BENCH_SOFTWARE_ENVIRONMENT", ("label", "identity", "metadata"))
+    identity = deepcopy(require_probe_object(get(probe, "software", nothing), "software"))
+    identity["runtime"] = Dict{String,Any}("name" => "Julia", "version" => string(VERSION))
+
+    execution = Dict{String,Any}("processes" => 1, "threads" => Threads.nthreads())
+    interface = detect_gpu_interface()
+    if interface !== nothing
+        identity["gpu"] = Dict{String,Any}("interface" => interface.identity)
+        gpu_runtime = detect_gpu_runtime(interface)
+        !isempty(gpu_runtime) && (identity["gpu_runtime"] = gpu_runtime)
+    end
+    identity["execution"] = execution
+    identity["math_libraries"] = Dict{String,Any}("blas" => detect_blas())
+
+    framework = Dict{String,Any}("name" => "BenchmarkTools.jl")
+    framework_version = module_version_string(BenchmarkTools)
+    !isempty(framework_version) && (framework["version"] = framework_version)
+    identity["benchmark"] = Dict{String,Any}("framework" => framework)
+
+    # A language-specific writer may provide a language-neutral dependency snapshot,
+    # for example identity.dependencies = {kind, format, digest}.
+    merge_metadata!(identity, object_field(override, "identity", "BENCH_SOFTWARE_ENVIRONMENT"))
+    metadata = object_field(override, "metadata", "BENCH_SOFTWARE_ENVIRONMENT")
+
+    identity_json = canonical_json(identity)
+    id = string("software-", bytes2hex(sha256(codeunits(identity_json))))
+    label = haskey(override, "label") ? String(override["label"]) : software_environment_label(identity)
+    (; id, label, identity=identity_json, metadata=canonical_json(metadata))
+end
+
+function make_run_context(source, code_state, hardware_environment, software_environment, measured_at::AbstractString, probe::AbstractDict)
     override = validate_object_keys(parse_object_env("BENCH_RUN"), "BENCH_RUN", ("notes", "metadata"))
     source_metadata = Dict{String,Any}()
     !isempty(source.branch) && (source_metadata["branch"] = source.branch)
     !isempty(source.tags) && (source_metadata["tags"] = source.tags)
+
     metadata = Dict{String,Any}(
-        "benchmark" => Dict{String,Any}(
-            "framework" => Dict{String,Any}(
-                "name" => "BenchmarkTools.jl",
-                "version" => string(Base.pkgversion(BenchmarkTools)),
-            ),
-        ),
-        "host" => Dict{String,Any}(
-            "hostname" => gethostname(),
+        "host" => Dict{String,Any}("hostname" => gethostname()),
+        "probe" => Dict{String,Any}(
+            "collector" => deepcopy(require_probe_object(get(probe, "collector", nothing), "collector")),
+            "diagnostics" => deepcopy(require_probe_object(get(probe, "diagnostics", nothing), "diagnostics")),
         ),
         "writer" => Dict{String,Any}(
             "name" => "BenchLedger Julia template",
-            "version" => Benchledger_Schema_Version,
+            "schema_version" => parse(Int, Benchledger_Schema_Version),
         ),
     )
-    gpu_interface = detect_gpu_interface()
-    !isempty(gpu_interface) && (metadata["gpu"] = Dict{String,Any}("interface" => gpu_interface))
     !isempty(source_metadata) && (metadata["source"] = source_metadata)
     merge_metadata!(metadata, object_field(override, "metadata", "BENCH_RUN"))
-    return (
+
+    if haskey(override, "notes")
+        notes = String(override["notes"])
+        !isempty(notes) && merge_metadata!(metadata, Dict{String,Any}("notes" => notes))
+    end
+
+    (
         id=string(uuid4()),
         code_state_id=code_state.id,
-        environment_id=environment.id,
+        hardware_environment_id=hardware_environment.id,
+        software_environment_id=software_environment.id,
         measured_at,
-        notes=haskey(override, "notes") ? String(override["notes"]) : "",
         metadata=canonical_json(metadata),
     )
 end
 
-function create_latest_view_v5!(db)
-    SQLite.execute(db,
-        """
-        CREATE VIEW IF NOT EXISTS benchmark_results_latest AS
-        SELECT
-            run_id,
-            code_state_id,
-            environment_id,
-            code_label,
-            environment_label,
-            code_date,
-            measured_at,
-            notes,
-            code_state_identity,
-            code_state_metadata,
-            environment_identity,
-            environment_metadata,
-            run_metadata,
-            benchmark_path,
-            benchmark_id,
-            benchmark_label,
-            metric_name,
-            statistic,
-            unit,
-            value,
-            better
-        FROM (
-            SELECT
-                runs.id AS run_id,
-                runs.code_state_id,
-                runs.environment_id,
-                code_states.label AS code_label,
-                environments.label AS environment_label,
-                code_states.code_date,
-                runs.measured_at,
-                runs.notes,
-                code_states.identity AS code_state_identity,
-                code_states.metadata AS code_state_metadata,
-                environments.identity AS environment_identity,
-                environments.metadata AS environment_metadata,
-                runs.metadata AS run_metadata,
-                results.benchmark_path,
-                results.benchmark_id,
-                results.benchmark_label,
-                results.metric_name,
-                results.statistic,
-                results.unit,
-                results.value,
-                results.better,
-                ROW_NUMBER() OVER (
-                    PARTITION BY runs.code_state_id, runs.environment_id,
-                        results.benchmark_id, results.metric_name, results.statistic
-                    ORDER BY runs.measured_at DESC, runs.id DESC
-                ) AS rn
-            FROM benchmark_results AS results
-            JOIN benchmark_runs AS runs ON runs.id = results.run_id
-            JOIN benchmark_code_states AS code_states ON code_states.id = runs.code_state_id
-            JOIN benchmark_environments AS environments ON environments.id = runs.environment_id
-        )
-        WHERE rn = 1
-        """)
+function create_v6_indexes!(db)
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS code_states_code_date_index ON code_states (code_date)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_measured_at_index ON runs (measured_at)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_code_state_id_index ON runs (code_state_id)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_hardware_environment_id_index ON runs (hardware_environment_id)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_software_environment_id_index ON runs (software_environment_id)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_configuration_index ON runs (code_state_id, hardware_environment_id, software_environment_id, measured_at, id)")
+    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_metric_lookup_index ON benchmark_results (benchmark_key, metric_name, statistic)")
 end
 
-function create_v5_indexes!(db)
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_code_states_code_date_index ON benchmark_code_states (code_date)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_runs_measured_at_index ON benchmark_runs (measured_at)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_runs_code_state_id_index ON benchmark_runs (code_state_id)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_runs_environment_id_index ON benchmark_runs (environment_id)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_runs_latest_partition_index ON benchmark_runs (code_state_id, environment_id, measured_at, id)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS benchmark_results_metric_lookup_index ON benchmark_results (benchmark_id, metric_name, statistic)")
-end
-
-function init_database!(db)
+function create_v6_tables!(db)
     SQLite.execute(db,
         """
         CREATE TABLE IF NOT EXISTS benchledger_metadata (
@@ -515,7 +534,7 @@ function init_database!(db)
         """)
     SQLite.execute(db,
         """
-        CREATE TABLE IF NOT EXISTS benchmark_code_states (
+        CREATE TABLE IF NOT EXISTS code_states (
             id TEXT PRIMARY KEY,
             label TEXT NOT NULL,
             code_date TEXT NOT NULL,
@@ -524,7 +543,7 @@ function init_database!(db)
         """)
     SQLite.execute(db,
         """
-        CREATE TABLE IF NOT EXISTS benchmark_environments (
+        CREATE TABLE IF NOT EXISTS hardware_environments (
             id TEXT PRIMARY KEY,
             label TEXT NOT NULL,
             identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
@@ -532,33 +551,47 @@ function init_database!(db)
         """)
     SQLite.execute(db,
         """
-        CREATE TABLE IF NOT EXISTS benchmark_runs (
+        CREATE TABLE IF NOT EXISTS software_environments (
+            id TEXT PRIMARY KEY,
+            label TEXT NOT NULL,
+            identity TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(identity)),
+            metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)))
+        """)
+    SQLite.execute(db,
+        """
+        CREATE TABLE IF NOT EXISTS runs (
             id TEXT PRIMARY KEY,
             code_state_id TEXT NOT NULL,
-            environment_id TEXT NOT NULL,
+            hardware_environment_id TEXT NOT NULL,
+            software_environment_id TEXT NOT NULL,
             measured_at TEXT NOT NULL,
-            notes TEXT NOT NULL DEFAULT '',
             metadata TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(metadata)),
-            FOREIGN KEY (code_state_id) REFERENCES benchmark_code_states(id) ON DELETE RESTRICT,
-            FOREIGN KEY (environment_id) REFERENCES benchmark_environments(id) ON DELETE RESTRICT)
+            FOREIGN KEY (code_state_id) REFERENCES code_states(id) ON DELETE RESTRICT,
+            FOREIGN KEY (hardware_environment_id) REFERENCES hardware_environments(id) ON DELETE RESTRICT,
+            FOREIGN KEY (software_environment_id) REFERENCES software_environments(id) ON DELETE RESTRICT)
         """)
     SQLite.execute(db,
         """
         CREATE TABLE IF NOT EXISTS benchmark_results (
             run_id TEXT NOT NULL,
-            benchmark_id TEXT NOT NULL,
-            benchmark_path TEXT NOT NULL,
-            benchmark_label TEXT NOT NULL,
+            benchmark_key TEXT NOT NULL CHECK (
+                CASE WHEN json_valid(benchmark_key)
+                    THEN json_type(benchmark_key) = 'array' AND json_array_length(benchmark_key) > 0
+                    ELSE 0
+                END),
             metric_name TEXT NOT NULL,
             statistic TEXT NOT NULL,
             unit TEXT NOT NULL,
             value REAL NOT NULL,
             better TEXT NOT NULL CHECK (better IN ('lower', 'higher', 'neutral')),
-            PRIMARY KEY (run_id, benchmark_id, metric_name, statistic),
-            FOREIGN KEY (run_id) REFERENCES benchmark_runs(id) ON DELETE CASCADE)
+            PRIMARY KEY (run_id, benchmark_key, metric_name, statistic),
+            FOREIGN KEY (run_id) REFERENCES runs(id) ON DELETE CASCADE)
         """)
-    create_latest_view_v5!(db)
-    create_v5_indexes!(db)
+end
+
+function init_database!(db)
+    create_v6_tables!(db)
+    create_v6_indexes!(db)
 end
 
 function make_metadata!(db, context)
@@ -611,39 +644,51 @@ function validate_schema_version!(db::SQLite.DB, path::AbstractString)
     schema_version = read_schema_version(db, path)
     schema_version == Benchledger_Schema_Version || error("Unsupported BenchLedger schema version in $(path): $(schema_version). Expected $(Benchledger_Schema_Version).")
 
-    validate_table_columns(db, path, "benchmark_code_states", ("id", "label", "code_date", "identity", "metadata"))
-    validate_table_columns(db, path, "benchmark_environments", ("id", "label", "identity", "metadata"))
-    validate_table_columns(db, path, "benchmark_runs", ("id", "code_state_id", "environment_id", "measured_at", "notes", "metadata"))
-    validate_table_columns(db, path, "benchmark_results", ("run_id", "benchmark_id", "benchmark_path", "benchmark_label", "metric_name", "statistic", "unit", "value", "better"))
+    validate_table_columns(db, path, "code_states", ("id", "label", "code_date", "identity", "metadata"))
+    validate_table_columns(db, path, "hardware_environments", ("id", "label", "identity", "metadata"))
+    validate_table_columns(db, path, "software_environments", ("id", "label", "identity", "metadata"))
+    validate_table_columns(db, path, "runs", ("id", "code_state_id", "hardware_environment_id", "software_environment_id", "measured_at", "metadata"))
+    validate_table_columns(db, path, "benchmark_results", ("run_id", "benchmark_key", "metric_name", "statistic", "unit", "value", "better"))
 end
 
 function open_database(path::AbstractString, context)
     mkpath(dirname(path))
     is_new_db = !isfile(path)
     db = SQLite.DB(path)
-    SQLite.execute(db, "PRAGMA foreign_keys=ON")
-    SQLite.execute(db, "PRAGMA journal_mode=WAL")
-    SQLite.execute(db, "PRAGMA synchronous=NORMAL")
-    !is_new_db && validate_schema_version!(db, path)
-    init_database!(db)
-    make_metadata!(db, context)
-    db
+    try
+        SQLite.execute(db, "PRAGMA foreign_keys=ON")
+        SQLite.execute(db, "PRAGMA journal_mode=WAL")
+        SQLite.execute(db, "PRAGMA synchronous=NORMAL")
+        if !is_new_db
+            schema_version = read_schema_version(db, path)
+            if schema_version == "5"
+                migrate_v5_to_v6!(db, path)
+            elseif schema_version != Benchledger_Schema_Version
+                error("Unsupported BenchLedger schema version in $(path): $(schema_version). Expected 5 or $(Benchledger_Schema_Version).")
+            end
+            validate_schema_version!(db, path)
+        end
+        init_database!(db)
+        make_metadata!(db, context)
+        return db
+    catch
+        close(db)
+        rethrow()
+    end
 end
 
-function metric_rows(benchmark_path::Vector{String}, trial::BenchmarkTools.Trial)
+function metric_rows(benchmark_key::Vector{String}, trial::BenchmarkTools.Trial)
     stats = median(trial)
     best = minimum(trial)
-    benchmark_id_value = benchmark_id(benchmark_path)
-    benchmark_label_value = join(benchmark_path, " / ")
     [
-        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "time", "median", "ns", Float64(stats.time), "lower"),
-        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "time", "min", "ns", Float64(best.time), "lower"),
-        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "memory", "min", "bytes", Float64(best.memory), "lower"),
-        BenchmarkMetricRow(benchmark_path, benchmark_id_value, benchmark_label_value, "allocs", "min", "count", Float64(best.allocs), "lower"),
+        BenchmarkMetricRow(benchmark_key, "time", "median", "ns", Float64(stats.time), "lower"),
+        BenchmarkMetricRow(benchmark_key, "time", "min", "ns", Float64(best.time), "lower"),
+        BenchmarkMetricRow(benchmark_key, "memory", "min", "bytes", Float64(best.memory), "lower"),
+        BenchmarkMetricRow(benchmark_key, "allocs", "min", "count", Float64(best.allocs), "lower"),
     ]
 end
 
-metric_rows(benchmark_path::Vector{String}, value) = error("Unsupported benchmark leaf at $(join(benchmark_path, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
+metric_rows(benchmark_key::Vector{String}, value) = error("Unsupported benchmark leaf at $(join(benchmark_key, " / ")): $(typeof(value)). Provide a BenchmarkTools.Trial or normalize custom results into BenchmarkMetricRow rows.")
 
 metric_rows(rows::Vector{BenchmarkMetricRow}) = rows
 metric_rows(rows::AbstractVector{<:BenchmarkMetricRow}) = BenchmarkMetricRow[row for row in rows]
@@ -654,38 +699,21 @@ metric_rows(results::Tuple{<:AbstractVector{<:NamedTuple},<:BenchmarkGroup}) =
 function metric_rows(results::BenchmarkGroup, prefix::Vector{String}=String[])
     rows = BenchmarkMetricRow[]
     for (name, value) in pairs(results)
-        path = [prefix; String(name)]
-        append!(rows, value isa BenchmarkGroup ? metric_rows(value, path) : metric_rows(path, value))
+        benchmark_key = [prefix; String(name)]
+        append!(rows, value isa BenchmarkGroup ? metric_rows(value, benchmark_key) : metric_rows(benchmark_key, value))
     end
-    return rows
-end
-
-function benchmark_id(path::Vector{String})
-    encoded = IOBuffer()
-    for segment in path
-        write(encoded, string(sizeof(segment), ":"))
-        write(encoded, segment)
-    end
-    return bytes2hex(sha1(take!(encoded)))
+    rows
 end
 
 required_metric_field(row::NamedTuple, field::Symbol) =
     hasproperty(row, field) ? getproperty(row, field) : error("Missing required metric field: $(field).")
 
 function metric_row(row::NamedTuple)
-    benchmark_path = if hasproperty(row, :benchmark_path)
-        value = getproperty(row, :benchmark_path)
-        value isa AbstractVector || error("benchmark_path must be a vector of strings.")
-        String[String(segment) for segment in value]
-    else
-        error("Missing required metric field: benchmark_path.")
-    end
-    benchmark_id_value = hasproperty(row, :benchmark_id) ? String(getproperty(row, :benchmark_id)) : benchmark_id(benchmark_path)
-    benchmark_label_value = hasproperty(row, :benchmark_label) ? String(getproperty(row, :benchmark_label)) : join(benchmark_path, " / ")
-    return BenchmarkMetricRow(
-        benchmark_path,
-        isempty(benchmark_id_value) ? benchmark_id(benchmark_path) : benchmark_id_value,
-        isempty(benchmark_label_value) ? join(benchmark_path, " / ") : benchmark_label_value,
+    value = required_metric_field(row, :benchmark_key)
+    value isa AbstractVector || error("benchmark_key must be a vector of strings.")
+    benchmark_key = String[String(segment) for segment in value]
+    BenchmarkMetricRow(
+        benchmark_key,
         String(required_metric_field(row, :metric_name)),
         String(required_metric_field(row, :statistic)),
         String(required_metric_field(row, :unit)),
@@ -694,35 +722,33 @@ function metric_row(row::NamedTuple)
     )
 end
 
+function validate_benchmark_key(benchmark_key::AbstractVector{<:AbstractString})
+    isempty(benchmark_key) && error("benchmark_key must contain at least one string segment.")
+    for (index, segment) in pairs(benchmark_key)
+        isempty(segment) && error("benchmark_key segment $(index) must not be empty.")
+    end
+    benchmark_key
+end
+
 function validate_metric_rows(rows::AbstractVector{<:BenchmarkMetricRow})
     seen = Set{Tuple{String,String,String}}()
     for row in rows
-        isempty(row.benchmark_id) && error("benchmark_id must not be empty.")
-        isempty(row.benchmark_label) && error("benchmark_label must not be empty.")
+        validate_benchmark_key(row.benchmark_key)
         isempty(row.metric_name) && error("metric_name must not be empty.")
         isempty(row.statistic) && error("statistic must not be empty.")
-        isfinite(row.value) || error("Metric value must be finite for $(row.benchmark_label) / $(row.metric_name) / $(row.statistic).")
-        row.better in ("lower", "higher", "neutral") || error("Unsupported better value for $(row.benchmark_label): $(row.better). Expected lower, higher, or neutral.")
-        key = (row.benchmark_id, row.metric_name, row.statistic)
-        key in seen && error("Duplicate metric row in the same run for benchmark_id=$(row.benchmark_id), metric_name=$(row.metric_name), statistic=$(row.statistic).")
+        isempty(row.unit) && error("unit must not be empty.")
+        benchmark_name = join(row.benchmark_key, " / ")
+        isfinite(row.value) || error("Metric value must be finite for $(benchmark_name) / $(row.metric_name) / $(row.statistic).")
+        row.better in ("lower", "higher", "neutral") || error("Unsupported better value for $(benchmark_name): $(row.better). Expected lower, higher, or neutral.")
+        key = (canonical_json(row.benchmark_key), row.metric_name, row.statistic)
+        key in seen && error("Duplicate metric row in the same run for benchmark_key=$(key[1]), metric_name=$(row.metric_name), statistic=$(row.statistic).")
         push!(seen, key)
     end
-    return rows
+    rows
 end
 
-function benchmark_result_row(run_id::AbstractString, row::BenchmarkMetricRow)
-    (
-        row.benchmark_id,
-        run_id,
-        JSON.json(row.benchmark_path),
-        row.benchmark_label,
-        row.metric_name,
-        row.statistic,
-        row.unit,
-        row.value,
-        row.better,
-    )
-end
+benchmark_result_row(run_id::AbstractString, row::BenchmarkMetricRow) =
+    (run_id, canonical_json(row.benchmark_key), row.metric_name, row.statistic, row.unit, row.value, row.better)
 
 function persist_labeled_entity!(db::SQLite.DB, table::AbstractString, id_value::AbstractString, identity::AbstractString, metadata::AbstractString, label::AbstractString; code_date::Union{Nothing,AbstractString}=nothing)
     code_date === nothing ? DBInterface.execute(db, "INSERT INTO $(table) (id, label, identity, metadata) VALUES (?, ?, ?, ?) ON CONFLICT (id) DO NOTHING", (id_value, label, identity, metadata)) :
@@ -750,8 +776,8 @@ function persist_labeled_entity!(db::SQLite.DB, table::AbstractString, id_value:
 end
 
 function insert_run!(db::SQLite.DB, context)
-    DBInterface.execute(db, "INSERT INTO benchmark_runs (id, code_state_id, environment_id, measured_at, notes, metadata) VALUES (?, ?, ?, ?, ?, ?)",
-        (context.id, context.code_state_id, context.environment_id, context.measured_at, context.notes, context.metadata,))
+    DBInterface.execute(db, "INSERT INTO runs (id, code_state_id, hardware_environment_id, software_environment_id, measured_at, metadata) VALUES (?, ?, ?, ?, ?, ?)",
+        (context.id, context.code_state_id, context.hardware_environment_id, context.software_environment_id, context.measured_at, context.metadata))
 end
 
 function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:BenchmarkMetricRow}, run_id::AbstractString)
@@ -761,36 +787,37 @@ function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:Benchmark
     length(rows)
 end
 
-function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMetricRow}, code_state, environment, context)
-    stmt = SQLite.Stmt(db,
-        """
-        INSERT INTO benchmark_results (benchmark_id, run_id, benchmark_path, benchmark_label,
-            metric_name, statistic, unit, value, better)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-        """)
+function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMetricRow}, code_state, hardware_environment, software_environment, context)
+    stmt = SQLite.Stmt(db, "INSERT INTO benchmark_results (run_id, benchmark_key, metric_name, statistic, unit, value, better) VALUES (?, ?, ?, ?, ?, ?, ?)")
     SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
     try
-        persist_labeled_entity!(db, "benchmark_code_states", code_state.id, code_state.identity, code_state.metadata, code_state.label; code_date=code_state.code_date)
-        persist_labeled_entity!(db, "benchmark_environments", environment.id, environment.identity, environment.metadata, environment.label)
+        persist_labeled_entity!(db, "code_states", code_state.id, code_state.identity, code_state.metadata, code_state.label; code_date=code_state.code_date)
+        persist_labeled_entity!(db, "hardware_environments", hardware_environment.id, hardware_environment.identity, hardware_environment.metadata, hardware_environment.label)
+        persist_labeled_entity!(db, "software_environments", software_environment.id, software_environment.identity, software_environment.metadata, software_environment.label)
         insert_run!(db, context)
         count = insert_metric_rows!(stmt, validate_metric_rows(rows), context.id)
-        DBInterface.close!(stmt)
         SQLite.execute(db, "COMMIT")
         return count
     catch err
-        DBInterface.close!(stmt)
-        SQLite.execute(db, "ROLLBACK")
+        try
+            SQLite.execute(db, "ROLLBACK")
+        catch
+        end
         rethrow(err)
+    finally
+        DBInterface.close!(stmt)
     end
 end
 
 measured_at = iso_utc_now()
 source = make_source_context()
 code_state = make_code_state(source, measured_at)
-environment = make_environment()
-context = make_run_context(source, code_state, environment, measured_at)
+probe = collect_probe()
+hardware_environment = make_hardware_environment(probe)
+software_environment = make_software_environment(probe)
+context = make_run_context(source, code_state, hardware_environment, software_environment, measured_at, probe)
 db = open_database(Results_DB_Path, context)
-count = persist_metric_rows!(db, metric_rows(results), code_state, environment, context)
+count = persist_metric_rows!(db, metric_rows(results), code_state, hardware_environment, software_environment, context)
 close(db)
 
 println("Wrote $count benchmark rows to $(Results_DB_Path)")

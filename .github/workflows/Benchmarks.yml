@@ -1,7 +1,7 @@
 name: Benchmarks
 
 env:
-  BENCHLEDGER_VERSION: "0.6.1"
+  BENCHLEDGER_VERSION: "0.7.0"
   TARGET_REPOSITORY: ""
   TARGET_REF: ""
   BENCH_DB_BRANCH: "gh-pages"
@@ -150,6 +150,37 @@ jobs:
       - name: Instantiate benchmark project
         run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
 
+      - name: Install matching BenchLedger probe
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="v${BENCHLEDGER_VERSION}"
+          asset="BenchLedger-probe-${tag}-linux-amd64.tar.gz"
+          install_dir="$RUNNER_TEMP/benchledger-probe"
+          rm -rf "$install_dir"
+          mkdir -p "$install_dir/download" "$install_dir/runtime"
+
+          gh release download "$tag" \
+            --repo abcdvvvv/BenchLedger \
+            --pattern "$asset" \
+            --pattern "$asset.sha256" \
+            --dir "$install_dir/download"
+
+          (
+            cd "$install_dir/download"
+            sha256sum -c "$asset.sha256"
+          )
+
+          tar -xzf "$install_dir/download/$asset" -C "$install_dir/runtime"
+          probe_path="$(find "$install_dir/runtime" -type f -name benchledger-probe -perm -111 -print -quit)"
+          [ -n "$probe_path" ] || { echo "benchledger-probe was not found in $asset" >&2; exit 1; }
+
+          echo "BENCH_PROBE_PATH=$probe_path" >> "$GITHUB_ENV"
+          "$probe_path" --version
+          "$probe_path" --pretty > "$RUNNER_TEMP/benchledger-probe-smoke.json"
+
       - name: Run benchmarks
         env:
           TARGET_MODE: ${{ github.event_name == 'workflow_dispatch' && inputs.target_mode || env.TARGET_REPOSITORY != '' && 'ref' || 'current' }}
@@ -264,10 +295,19 @@ jobs:
       - name: Install BenchLedger viewer
         if: env.BENCH_DB_BRANCH == 'gh-pages'
         run: |
-          url="https://github.com/abcdvvvv/BenchLedger/releases/download/v${BENCHLEDGER_VERSION}/BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
-          curl -fsSL "$url" -o /tmp/benchledger-dist.tar.gz
-          rm -rf /tmp/benchledger-dist && mkdir -p /tmp/benchledger-dist
-          tar -xzf /tmp/benchledger-dist.tar.gz -C /tmp/benchledger-dist
+          set -euo pipefail
+          tag="v${BENCHLEDGER_VERSION}"
+          asset="BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
+          base_url="https://github.com/abcdvvvv/BenchLedger/releases/download/${tag}"
+          rm -rf /tmp/benchledger-dist /tmp/benchledger-dist-download
+          mkdir -p /tmp/benchledger-dist /tmp/benchledger-dist-download
+          curl -fsSL "${base_url}/${asset}" -o "/tmp/benchledger-dist-download/${asset}"
+          curl -fsSL "${base_url}/${asset}.sha256" -o "/tmp/benchledger-dist-download/${asset}.sha256"
+          (
+            cd /tmp/benchledger-dist-download
+            sha256sum -c "${asset}.sha256"
+          )
+          tar -xzf "/tmp/benchledger-dist-download/${asset}" -C /tmp/benchledger-dist
           mkdir -p .benchledger-db/benchmarks/data
           find .benchledger-db/benchmarks -mindepth 1 -maxdepth 1 ! -name data -exec rm -rf {} +
           cp -a /tmp/benchledger-dist/. .benchledger-db/benchmarks/
@@ -292,7 +332,6 @@ jobs:
           description = metadata.get("description", "")
           project_url = metadata.get("project_url") or None
           logo_url = metadata.get("logo_url") or None
-          schema_version = int(metadata["schema_version"])
           generated_at = datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
           with open(db_path, "rb") as source:
@@ -304,7 +343,6 @@ jobs:
               db_url = "./" + db_url
 
           manifest = {
-              "manifest_version": 1,
               "benchledger_web_version": web_version,
               "generated_at": generated_at,
               "site": {"title": f"{name} BenchLedger", "description": description},
@@ -316,7 +354,6 @@ jobs:
                   "sha256": sha256,
                   "size_bytes": os.path.getsize(db_path),
                   "packed_at": generated_at,
-                  "schema_version": schema_version,
                   "metadata_preview": {
                       "name": name,
                       "project_url": project_url,
