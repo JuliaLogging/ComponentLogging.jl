@@ -113,8 +113,6 @@ Typically you pass a `ComponentLogger` configured with per-group rules and a sin
   * General rule:  `n → LogLevel(n)`.
   * Passing `LogLevel` values (e.g. `Info`) is also supported and equivalent.
 
-> **Why logger-first? Performance & type-stability.** The stdlib logging macros (`@info`, `@logmsg`, …) typically start by looking up the current logger (task-local, with a global fallback). When you already have a logger (e.g. stored in a `const` or a `Ref`), calling `clog(logger, ...)` bypasses that lookup and can reduce overhead in hot paths, while keeping behavior explicit and predictable under concurrency.
-
 **`clog` — emit a log record for a group at a given level**
 
 ```julia

@@ -30,7 +30,13 @@ function solve(problem, logger)
 end
 ```
 
-Because the concrete `ComponentLogger{L}` type can remain visible throughout the call chain, Julia can specialize on the sink type as well as bypassing both task-local lookup and module-registry lookup.
+### Why pass a logger explicitly?
+
+The standard-library logging macros (`@info`, `@logmsg`, ...) first look up the
+current task's logger, with the global logger as fallback. When a logger is
+already available—for example, in a `const` binding or a `Ref`—calling
+`clog(logger, ...)` bypasses that lookup, keeps the logging policy explicit,
+and helps keep hot paths very fast.
 
 ## Task-specific loggers
 
