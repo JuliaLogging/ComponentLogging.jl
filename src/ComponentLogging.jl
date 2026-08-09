@@ -80,6 +80,11 @@ function set_log_level!(logger::ComponentLogger, group, lvl, args...)
     return logger
 end
 
+function get_log_level(logger::ComponentLogger, group::Union{Symbol,RuleKey})::LogLevel
+    state = @atomic :acquire logger.state
+    return _effective_level(state.rules, group)
+end
+
 function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) where {F}
     lvl = LogLevel(lvl)
     lock(logger.lock)
@@ -256,7 +261,7 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
         end
 
     # 1) per-depth (depth = length(path)) maximum width of ":name"
-    widths = Dict{Int,Int}()   # depth => max width of ":" * name
+    widths = Dict{Int,Int}() # depth => max width of ":" * name
     @inbounds for k in paths
         d = length(k)
         w = 1 + getinfo(k[end])[2]
@@ -275,11 +280,11 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
         prev = 0
         @inbounds for d in depths
             raw = (2 + 3d) + widths[d] + gutter
-            effcol[d] = max(raw, prev + 3)   # at least 3 columns to the right of previous depth
+            effcol[d] = max(raw, prev + 3) # at least 3 columns to the right of previous depth
             prev = effcol[d]
         end
     else
-        empty!(effcol)  # no alignment: leave only gutter spacing
+        empty!(effcol) # no alignment: leave only gutter spacing
     end
 
     function rec(path::RuleKey, indent::Vector{Bool}=Bool[], islast::Bool=true)

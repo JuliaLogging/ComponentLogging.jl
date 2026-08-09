@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-08-09
+### Added
+- `get_log_level(logger, group)` for querying a component group's effective log level.
+
 ## [0.3.0] - 2026-07-30
 ### Changed
 - Improved thread safety for component log-level updates and module logger bindings, allowing logging configuration to be changed safely in concurrent applications.
@@ -100,7 +104,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.6...v0.2.0
 [0.1.6]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.5...v0.1.6

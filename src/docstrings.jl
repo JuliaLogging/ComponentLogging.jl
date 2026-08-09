@@ -44,14 +44,35 @@ ComponentLogger
 """
     set_log_level!(logger, group, lvl, args...) -> ComponentLogger
 
-Set or update the minimum level for a specific component `group` on `logger`.
-`group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel`, `Integer`, or `Bool`.
-Additional `args...` are accepted as more `group, level` pairs and are applied atomically in one update.
-If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and
-`false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
-Updates `rules` under `logger.lock` and keeps the atomic `min_level` cache consistent.
+Set or update the minimum level for a specific component `group` on `logger`. `group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel`, `Integer`, or `Bool`. Additional `args...` are accepted as more `group, level` pairs and are applied atomically in one update.
+
+If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and `false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
+
+Rule updates are thread-safe and atomic.
+
+Example:
+
+```julia
+logger = ComponentLogger()
+set_log_level!(logger, :solver, 1000, (:solver, :iteration), -1000)
+```
 """
 set_log_level!
+
+"""
+    get_log_level(logger, group) -> LogLevel
+
+Return the effective minimum log level for `group` on `logger`. `group` may be a `Symbol` or an `NTuple{N,Symbol}` component path.
+
+Example:
+
+```julia
+logger = ComponentLogger(Dict(:solver => Warn))
+ComponentLogging.get_log_level(logger, (:solver, :iteration))
+# Warn
+```
+"""
+get_log_level
 
 """
     with_min_level(f, logger, lvl)
