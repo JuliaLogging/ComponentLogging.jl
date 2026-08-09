@@ -7,7 +7,7 @@ Module-scoped logging utilities for Julia built on top of the stdlib `Logging`. 
 - Lightweight functions `clog`, `clogenabled`, `clogf` for emitting messages and checking if logging is enabled.
 - Macros `@clog`, `@clogf`, `@clogenabled` that capture the caller module/source location for accurate provenance.
 - Macro `@forward_logger` to generate module-local forwarding methods.
-- A simple `PlainLogger` sink for pretty, colored output without timestamps/prefixes.
+- A simple `PlainLogger` sink for plain output without timestamps or standard prefixes.
 
 Typical usage:
 
@@ -36,8 +36,9 @@ component-based minimum level rules. Rules are defined on paths of symbols
 - `rules`: mapping from `NTuple{N,Symbol}` to `LogLevel`. If no explicit
   `(:__default__,)` rule exists, lookup falls back to `Info`.
 - `sink`: the underlying `AbstractLogger` that actually handles messages.
-- `lock`: protects concurrent access to `rules`.
-- `min_level`: atomic cache of the minimum value in `rules` for fast checks.
+- Configuration updates are serialized and published as atomic copy-on-write
+  (COW) snapshots.
+- Each snapshot includes a `min_level` cache for fast checks.
 """
 ComponentLogger
 
@@ -62,13 +63,15 @@ set_log_level!
 """
     get_log_level(logger, group) -> LogLevel
 
-Return the effective minimum log level for `group` on `logger`. `group` may be a `Symbol` or an `NTuple{N,Symbol}` component path.
+Return the effective minimum log level for `group` on `logger`. `group` may be
+a `Symbol` or an `NTuple{N,Symbol}` component path. Lookup checks the exact
+path, then its parent paths, and finally `(:__default__,)`.
 
 Example:
 
 ```julia
 logger = ComponentLogger(Dict(:solver => Warn))
-ComponentLogging.get_log_level(logger, (:solver, :iteration))
+get_log_level(logger, (:solver, :iteration))
 # Warn
 ```
 """
@@ -77,10 +80,11 @@ get_log_level
 """
     with_min_level(f, logger, lvl)
 
-Temporarily override the minimum enabled level for the current task while
-executing `f()`. The override is task-local, so it does not modify `logger.min_level`
-or affect other concurrent tasks. Nested overrides are restored correctly, including
-when `f()` throws an exception.
+Temporarily override the minimum enabled level for `logger` while executing
+`f()`. The override applies to every task and thread that uses this logger, and
+the previous state is restored when `f()` returns or throws. Configuration
+changes made to the logger during the callback are discarded when that state is
+restored.
 """
 with_min_level
 
@@ -255,8 +259,8 @@ clogf(:core, 0) do
 end
 set_log_level(:core, 1000)
 with_min_level(2000) do
-    # Temporarily raise the current task's minimum level (fast early rejection).
-    clog(:core, 0, "suppressed by the task-local minimum")
+    # Temporarily raise this logger's minimum level (fast early rejection).
+    clog(:core, 0, "suppressed by the temporary minimum")
 end
 ```
 
@@ -268,7 +272,7 @@ Note: Use this macro at module top-level.
     PlainLogger(; stream=Base.CoreLogging.closed_stream, min_level=Info)
 
 A simple `AbstractLogger` implementation that prints messages without standard
-prefixes/timestamps, with minimal coloring by level.
+prefixes or timestamps.
 
 - `stream::IO`: target stream; if closed, falls back to `stderr`.
 - `min_level::LogLevel`: minimum enabled level for the sink.

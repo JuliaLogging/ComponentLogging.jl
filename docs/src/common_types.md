@@ -64,6 +64,16 @@ set_log_level!(logger, (:solver, :heuristics), false)
 
 `true` maps to level `0` (`Info`) and `false` maps to level `1`, which pairs naturally with the no-level `clogenabled(logger, group)` check. See [Hierarchical Runtime Control](@ref) for broader use of this mechanism.
 
+## Inspecting effective levels
+
+Use `get_log_level` to query a group's effective level after hierarchical lookup.
+
+```julia
+logger = ComponentLogger(Dict(:solver => 1000))
+get_log_level(logger, (:solver, :iteration))
+# Warn
+```
+
 ## Temporary global minimum level
 
 `with_min_level` temporarily changes the minimum level of one `ComponentLogger` for the duration of a callback:
@@ -101,5 +111,6 @@ ComponentLogging
 ComponentLogger
 PlainLogger
 set_log_level!
+get_log_level
 with_min_level
 ```

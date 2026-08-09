@@ -45,12 +45,13 @@ Output:
 ```text
 ComponentLogger
   sink:  PlainLogger
-  min:   -1000
+  min:   0
   rules: 4
    ├─ :__default__     0
    ├─ :core            0
    ├─ :io              1000
-   └─ (:net,:http)     2000
+   └─ :net
+      └─ :http         2000
 ```
 
 **What the rules mean**
@@ -89,6 +90,8 @@ Without forwarding helpers, use the logger-explicit forms instead:
 ```julia
 set_log_level!(clogger, (:solver, :heuristics), false)
 clogenabled(clogger, (:solver, :heuristics))
+# Query the level after hierarchical fallback.
+get_log_level(clogger, (:solver, :heuristics))
 ```
 
 ### Core APIs
@@ -234,12 +237,12 @@ end
 ### Notes
 
 * **Routing vs. formatting**: `ComponentLogger` only routes/filters; the **sink** (`PlainLogger` or any `AbstractLogger`) controls formatting/IO.
-* **Grouping**: groups are `Symbol` or tuples of `Symbol` (supports hierarchical/prefix matching if enabled). Be explicit about your matching policy in docs if you customize it.
-* The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://abcdvvvv.github.io/ComponentLogging.jl/dev/).
+* **Grouping**: groups are `Symbol` or tuples of `Symbol`, matched hierarchically by prefix.
+* The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://julialogging.github.io/ComponentLogging.jl/dev/).
 
 ## PlainLogger
 
-`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`‑style prefixes. Its output looks like `print`/`println`. It writes messages directly to the console, without additional formatting or filtering beyond color.
+`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`-style prefixes. Its output looks like `print`/`println`, subject to its configured `min_level` filter.
 
 `PlainLogger` and `ComponentLogger` are independent. You can also `include("src/PlainLogger.jl")` to use `PlainLogger` on its own.
 
@@ -259,7 +262,7 @@ Hello, Julia!
 @ README.md:183
 ```
 
-`PlainLogger` uses `show` with `MIME"text/plain"` to display 2D and 3D matrices, as it improves matrix readability. For other types, it prints them directly using `print` or `printstyled`.
+`PlainLogger` uses `show` with `MIME"text/plain"` to display 2D and 3D matrices, as it improves matrix readability. For other values, it prints them directly using `print`.
 
 ```julia
 with_logger(logger) do

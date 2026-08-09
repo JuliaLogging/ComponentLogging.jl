@@ -3,7 +3,7 @@ using Logging
 include("PlainLogger.jl")
 export PlainLogger
 
-export ComponentLogger, get_logger, set_module_logger, set_log_level!, with_min_level
+export ComponentLogger, get_logger, set_module_logger, set_log_level!, get_log_level, with_min_level
 export clog, clogenabled, clogf
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf, @forward_logger
 
