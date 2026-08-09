@@ -3,7 +3,6 @@ using Documenter
 
 DocMeta.setdocmeta!(ComponentLogging, :DocTestSetup, :(using ComponentLogging); recursive=true)
 
-#! format: off
 makedocs(;
     modules  = [ComponentLogging],
     authors  = "karei <abcdvvvv@gmail.com>",

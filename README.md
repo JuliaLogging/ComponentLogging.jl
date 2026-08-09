@@ -8,7 +8,7 @@
 
 ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around *module-scoped component logging* and *hierarchical log-level control*.
 
-Unlike Julia's standard [`Logging`](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
+Unlike Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
 
 ## Installation
 

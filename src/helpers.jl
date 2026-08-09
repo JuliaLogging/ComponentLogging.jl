@@ -1,7 +1,7 @@
 resolve_logger(logger::AbstractLogger) = logger
 resolve_logger(logger_ref::Base.RefValue{<:AbstractLogger}) = logger_ref[]
 
-## clog
+## Functions: clog/clogenabled/clogf
 function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
@@ -12,7 +12,6 @@ end
 clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
     clog(logger, group, Info, message...; _module, id, file, line, kwargs...)
 
-## clogenabled
 function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
     grp = _tokey(group)
     lvl = LogLevel(level)
@@ -22,7 +21,6 @@ end
 clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
     clogenabled(logger, group, Info)
 
-## clogf
 @inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F}
     grp = _tokey(group)
     lvl = LogLevel(level)
@@ -35,7 +33,7 @@ clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
     nothing
 end
 
-## macro
+## Macros: @forward_logger/@clog/@clogenabled/@clogf and @c* shorthands
 macro forward_logger(logger)
     logger_ex = esc(logger)
     return quote
