@@ -82,7 +82,7 @@ end
 
 ## Forwarding macro
 
-`@forward_logger` generates module-local forwarding methods for `clog`, `clogenabled`, `clogf`, `set_log_level`, and `with_min_level`, allowing one known logger to be used without writing it at every call site.
+`@forward_logger` generates module-local forwarding methods for `clog`, `clogenabled`, `clogf`, `set_log_level!`, `get_log_level`, and `with_min_level`, allowing one known logger to be used without writing it at every call site.
 
 ```julia
 const logger = ComponentLogger(...)
@@ -90,7 +90,8 @@ const logger = ComponentLogger(...)
 
 clog(:core, 0, "hello")
 clogenabled(:core)
-set_log_level(:core, true)
+set_log_level!(:core, true)
+get_log_level(:core)
 ```
 
 The forwarded logger expression may also be a `Ref`, which is useful when the logger object itself needs to be replaced while keeping the forwarding methods stable.

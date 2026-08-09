@@ -62,7 +62,7 @@ ComponentLogger
 
 ### Hierarchical runtime switches
 
-The same group hierarchy can be used as a lightweight runtime control plane. With the forwarding helpers created by `@forward_logger`, `set_log_level(group, true)` enables the group's default `Info`-level check, while `set_log_level(group, false)` disables it.
+The same group hierarchy can be used as a lightweight runtime control plane. With the forwarding helpers created by `@forward_logger`, `set_log_level!(group, true)` enables the group's default `Info`-level check, while `set_log_level!(group, false)` disables it.
 
 ```julia
 function solve(problem)
@@ -76,9 +76,9 @@ function solve(problem)
 end
 
 # Change behavior globally for this module/component.
-set_log_level((:solver, :presolve), true)
-set_log_level((:solver, :heuristics), false)
-set_log_level((:solver, :cache), true)
+set_log_level!((:solver, :presolve), true)
+set_log_level!((:solver, :heuristics), false)
+set_log_level!((:solver, :cache), true)
 
 solve(problem)
 ```
@@ -150,7 +150,8 @@ The macro above is equivalent to defining the following forwarding methods at mo
 clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)
 clogenabled(args...)     = ComponentLogging.clogenabled(clogger, args...)
 clogf(f, args...)        = ComponentLogging.clogf(f, clogger, args...)
-set_log_level(g, lvl)    = ComponentLogging.set_log_level!(clogger, g, lvl)
+set_log_level!(g, lvl)   = ComponentLogging.set_log_level!(clogger, g, lvl)
+get_log_level(g)         = ComponentLogging.get_log_level(clogger, g)
 with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
 ```
 

@@ -55,11 +55,14 @@ macro forward_logger(logger)
             level::Union{Integer,ComponentLogging.LogLevel}; _module=nothing, file=nothing, line=nothing) =
             ComponentLogging.clogf(f, ComponentLogging.resolve_logger($logger_ex), group, level; _module, file, line)
 
-        $(esc(:set_log_level))(group, level::Union{Integer,ComponentLogging.LogLevel}) =
+        $(esc(:set_log_level!))(group, level::Union{Integer,ComponentLogging.LogLevel}) =
             ComponentLogging.set_log_level!(ComponentLogging.resolve_logger($logger_ex), group, level)
 
-        $(esc(:set_log_level))(group, on::Bool) =
+        $(esc(:set_log_level!))(group, on::Bool) =
             ComponentLogging.set_log_level!(ComponentLogging.resolve_logger($logger_ex), group, on)
+
+        $(esc(:get_log_level))(group::Union{Symbol,ComponentLogging.RuleKey}) =
+            ComponentLogging.get_log_level(ComponentLogging.resolve_logger($logger_ex), group)
 
         $(esc(:with_min_level))(f, level::Union{Integer,ComponentLogging.LogLevel}) =
             ComponentLogging.with_min_level(f, ComponentLogging.resolve_logger($logger_ex), level)

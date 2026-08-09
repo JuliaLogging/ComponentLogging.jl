@@ -298,8 +298,10 @@ end
         end
         @test occursin("allowed", String(take!(ForwardLoggerTest.buf)))
 
-        ForwardLoggerTest.set_log_level(:core, 0)
+        @test ForwardLoggerTest.get_log_level(:core) === Warn
+        ForwardLoggerTest.set_log_level!(:core, 0)
         @test ForwardLoggerTest.clogenabled(:core, 0) == true
+        @test ForwardLoggerTest.get_log_level(:core) === Info
 
         ForwardLoggerTest2.clog(:core, 0, "independent")
         @test occursin("independent", String(take!(ForwardLoggerTest2.buf)))

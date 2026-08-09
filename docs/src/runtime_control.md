@@ -49,8 +49,8 @@ const logger = ComponentLogger()
 the same pattern becomes:
 
 ```julia
-set_log_level(group, true)
-set_log_level(group, false)
+set_log_level!(group, true)
+set_log_level!(group, false)
 clogenabled(group)
 ```
 
@@ -73,9 +73,9 @@ function solve(problem)
     return optimize!(problem)
 end
 
-set_log_level((:solver, :presolve), true)
-set_log_level((:solver, :heuristics), false)
-set_log_level((:solver, :cache), true)
+set_log_level!((:solver, :presolve), true)
+set_log_level!((:solver, :heuristics), false)
+set_log_level!((:solver, :cache), true)
 
 solve(problem)
 ```

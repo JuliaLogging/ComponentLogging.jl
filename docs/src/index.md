@@ -75,7 +75,7 @@ This provides task-specific logging without making every log call query task-loc
 
 ## Beyond logging
 
-The same hierarchy can also act as a **lightweight runtime control plane**. `clogenabled` can guard arbitrary work, while Boolean `set_log_level!` / `set_log_level` calls turn hierarchical groups into runtime switches without threading configuration flags through every function in the call stack.
+The same hierarchy can also act as a **lightweight runtime control plane**. `clogenabled` can guard arbitrary work, while Boolean `set_log_level!` calls turn hierarchical groups into runtime switches without threading configuration flags through every function in the call stack.
 
 This can be used for diagnostics, tracing, optional computations, algorithmic branches, caching strategies, instrumentation, or any other behavior placed behind the hierarchy.
 

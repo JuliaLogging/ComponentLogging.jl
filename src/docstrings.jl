@@ -240,8 +240,8 @@ captured automatically.
     @forward_logger logger
 
 Define forwarding methods in the current module so you can call `clog`, `clogf`,
-`clogenabled`, `set_log_level`, and `with_min_level` without explicitly passing a
-logger each time.
+`clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level` without
+explicitly passing a logger each time.
 
 `logger` may be either an `AbstractLogger` or a `Base.RefValue{<:AbstractLogger}`.
 
@@ -257,7 +257,8 @@ clog(:core, 0, "hello")
 clogf(:core, 0) do
     ("expensive ", 1 + 2)
 end
-set_log_level(:core, 1000)
+set_log_level!(:core, 1000)
+get_log_level(:core)
 with_min_level(2000) do
     # Temporarily raise this logger's minimum level (fast early rejection).
     clog(:core, 0, "suppressed by the temporary minimum")
