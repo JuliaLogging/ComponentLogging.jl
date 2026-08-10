@@ -4,7 +4,7 @@ CurrentModule = ComponentLogging
 
 # Common Types and Configuration
 
-## `ComponentLogger`
+## ComponentLogger
 
 `ComponentLogger` is the central router/filter in ComponentLogging. It associates hierarchical group keys with minimum integer log levels and delegates accepted messages to an `AbstractLogger` sink.
 
@@ -33,7 +33,8 @@ Here `:solver` and unmatched descendants require level `1000`, while `(:solver, 
 
 `ComponentLogger` is safe to share across tasks and threads. Rule updates are serialized and published as atomic copy-on-write snapshots, while normal reads remain lock-free. Each snapshot includes a cached minimum level for fast rejection.
 
-!!! info Thread safety was introduced in v0.2.0. High-performance copy-on-write snapshots were introduced in v0.3.0.
+!!! info 
+    Thread safety was introduced in v0.2.0. High-performance copy-on-write snapshots were introduced in v0.3.0.
 
 The logger owns routing/filtering state, not final output. Accepted records are delegated to `logger.sink`; output thread safety therefore depends on the sink.
 
@@ -85,9 +86,10 @@ end
 
 This is a **logger-wide temporary override**, not a task-local equivalent of `Logging.with_logger`. All users of the target logger observe the temporary minimum until the callback exits, after which the previous state is restored even if the callback throws.
 
-!!! warning The temporary level applies to every task and thread using that logger. The old snapshot is restored even if the callback throws, so configuration changes to the same logger inside the callback do not persist afterward.
+!!! warning "Thread safety"
+    The temporary level applies to every task and thread using that logger. The old snapshot is restored even if the callback throws, so configuration changes to the same logger inside the callback do not persist afterward.
 
-## `PlainLogger`
+## PlainLogger
 
 `PlainLogger` is an independent `AbstractLogger` sink that keeps console output close to ordinary `print`/`println` output instead of adding the standard `[ Info:`-style presentation. It can be used as the sink of a `ComponentLogger` or on its own with Julia's standard `with_logger`.
 

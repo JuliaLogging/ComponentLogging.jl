@@ -154,5 +154,4 @@ clogf
 @cinfo
 @cwarn
 @cerror
-@forward_logger
 ```

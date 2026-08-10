@@ -81,16 +81,6 @@ This can be used for diagnostics, tracing, optional computations, algorithmic br
 
 See [Hierarchical Runtime Control](@ref) for the full pattern and examples.
 
-## Choosing an API
-
-| API style | Best suited for | Logger lookup |
-|:--|:--|:--|
-| `clog`, `clogf`, `clogenabled` with an explicit logger | Hot paths, libraries, execution-specific loggers | None |
-| `@forward_logger` generated wrappers | Module-local convenience with a known logger | Resolved from the forwarded logger expression |
-| `@clog`, `@cinfo`, ... | Explicit logging with caller metadata, or module-local forwarding after `@forward_logger` | Explicit logger or forwarded logger expression |
-
-The [Function API](@ref) page covers the explicit and forwarded function interfaces. The [Macros API](@ref) page covers explicit logging macros and the shorter forwarded `@clog` form.
-
 ## Performance tracking
 
 ComponentLogging is continuously benchmarked over time. Current and historical performance results are available on the [benchmark dashboard](https://julialogging.github.io/ComponentLogging.jl/benchmarks/).
