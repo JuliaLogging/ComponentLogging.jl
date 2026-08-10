@@ -5,68 +5,104 @@ using Test
 module ForwardLoggerTest
 using ComponentLogging
 using Logging
+
 const buf = IOBuffer()
-const logger_ref = Ref(ComponentLogger(Dict(:__default__ => Info, :core => Warn); sink=ConsoleLogger(buf, Debug)))
-@forward_logger logger_ref
+const logger = ComponentLogger(Dict(:__default__ => 0, :core => 1000); sink=PlainLogger(stream=buf))
+@forward_logger logger
+
+function macro_side_effects()
+    values = Int[]
+    @clog :core 1000 push!(values, 1) push!(values, 2) nothing
+    @clog :core -2000 push!(values, 3) nothing
+    return values
 end
 
-module ForwardLoggerTest2
+function macro_source_line()
+    expected_line = (@__LINE__) + 1
+    @clog :__default__ 0 "forwarded metadata"
+    return expected_line
+end
+end
+
+module ForwardLoggerFieldTest
 using ComponentLogging
 using Logging
+
 const buf = IOBuffer()
-const logger_ref = Ref(ComponentLogger(Dict(:__default__ => Info, :core => Info); sink=ConsoleLogger(buf, Debug)))
-@forward_logger logger_ref
+const state = Ref((logger=ComponentLogger(Dict(:__default__ => 0); sink=PlainLogger(stream=buf)),))
+@forward_logger state[].logger
+
+emit(level=0) = @clog :field level "field logger"
 end
 
-@testset "ComponentLogging.jl" begin
-    buf = IOBuffer()
-    rules = Dict((:core,) => Warn)
-    sink = ConsoleLogger(buf, Debug)
-    logger = ComponentLogger(rules; sink)
-    set_module_logger(@__MODULE__, logger)
+module ForwardLoggerConsumer
+using Logging
+using ..ForwardLoggerTest: @clog
 
-    # Helper to clear buffer
+emit() = @clog :__default__ 0 "consumer"
+end
+
+function direct_macro_side_effects(logger)
+    values = Int[]
+    @clog logger :core 1000 push!(values, 1) push!(values, 2) nothing
+    @clog logger :core -2000 push!(values, 3) nothing
+    return values
+end
+
+function direct_macro_hygiene(logger)
+    _lg = :outer_logger
+    _grp = :outer_group
+    _lvl = :outer_level
+    _id = :outer_id
+    _msgs = :outer_messages
+    @clog logger :core 1000 "hygiene"
+    return (_lg, _grp, _lvl, _id, _msgs)
+end
+
+function direct_macro_source_line(logger)
+    expected_line = (@__LINE__) + 1
+    @clog logger :core 1000 "direct metadata"
+    return expected_line
+end
+
+@testset "ComponentLogging" begin
+    buf = IOBuffer()
+    sink = ConsoleLogger(buf, -2000)
+    logger = ComponentLogger(Dict((:core,) => 1000); sink)
     clearbuf!() = (take!(buf); nothing)
 
     @testset "enable logic" begin
-        @test clogenabled(logger, :__default__, Info) == true
-        @test clogenabled(logger, :__default__, Debug) == false
-        @test clogenabled(logger, :core, Warn) == true
-        @test clogenabled(logger, :core, Info) == false
-        @test clogenabled(logger, :core) == false
-        @test (@clogenabled :core Warn) == true
-        @test (@clogenabled :core Debug) == false
+        @test clogenabled(logger, :__default__, 0)
+        @test !clogenabled(logger, :__default__, -2000)
+        @test clogenabled(logger, :core, 1000)
+        @test !clogenabled(logger, :core, 0)
+        @test !clogenabled(logger, :core)
+        @test get_log_level(logger, :core) === Warn
+        @test get_log_level(logger, (:core, :child)) === Warn
+        @test get_log_level(logger, :other) === Info
     end
 
-    @testset "function API requires group" begin
-        @test_throws MethodError clog(logger, Info, "missing group")
-        @test_throws MethodError clogenabled(logger, Info)
-    end
-
-    @testset "clog emits when enabled" begin
-        clearbuf!()
-        # Enabled for :core at Warn
-        clog(logger, :core, Warn, "hello warn")
-        data = String(take!(buf))
-        @test !isempty(data)
+    @testset "function API" begin
+        @test_throws MethodError clog(logger, 0, "missing group")
+        @test_throws MethodError clogenabled(logger, 0)
 
         clearbuf!()
-        # Disabled at Debug for :core
-        clog(logger, :core, Debug, "no debug")
-        data2 = String(take!(buf))
-        @test isempty(data2)
+        clog(logger, :core, 1000, "hello warn")
+        @test !isempty(String(take!(buf)))
 
         clearbuf!()
-        # Default group at Info is enabled
-        clog(logger, :__default__, Info, "info default")
+        clog(logger, :core, -2000, "no debug")
+        @test isempty(String(take!(buf)))
+
+        clearbuf!()
+        clog(logger, :__default__, 0, "info default")
         @test !isempty(String(take!(buf)))
     end
 
     @testset "clogf lazy evaluation" begin
         counter = Ref(0)
         clearbuf!()
-        # Disabled -> f() should not run
-        clogf(logger, :core, Debug) do
+        clogf(logger, :core, -2000) do
             counter[] += 1
             "computed"
         end
@@ -74,157 +110,102 @@ end
         @test isempty(String(take!(buf)))
 
         clearbuf!()
-        # Enabled -> f() should run exactly once and emit
-        clogf(logger, :core, Error) do
+        clogf(logger, :core, 2000) do
             counter[] += 1
             "computed"
         end
         @test counter[] == 1
         @test !isempty(String(take!(buf)))
+    end
+
+    @testset "explicit logging macros" begin
+        clearbuf!()
+        group = (:core,)
+        level = 1000
+        @clog logger group level "dynamic group and level"
+        @test occursin("dynamic group and level", String(take!(buf)))
 
         clearbuf!()
-        # Enabled -> f() should run exactly once and emit
-        @clogf :core Error () -> begin
-            counter[] += 1
-            "computed"
-        end
-        @test counter[] == 2
-        @test !isempty(String(take!(buf)))
+        @clog logger :core 2000 "explicit macro"
+        @test occursin("explicit macro", String(take!(buf)))
+
+        @test direct_macro_side_effects(logger) == [1, 2]
+        @test direct_macro_hygiene(logger) == (
+            :outer_logger,
+            :outer_group,
+            :outer_level,
+            :outer_id,
+            :outer_messages,
+        )
+        @test occursin("hygiene", String(take!(buf)))
+
+        clearbuf!()
+        @cdebug logger :core "debug shorthand"
+        @cinfo logger :__default__ "info shorthand"
+        @cwarn logger :core "warn shorthand"
+        @cerror logger :core "error shorthand"
+        shorthand_output = String(take!(buf))
+        @test !occursin("debug shorthand", shorthand_output)
+        @test occursin("info shorthand", shorthand_output)
+        @test occursin("warn shorthand", shorthand_output)
+        @test occursin("error shorthand", shorthand_output)
+
+        clearbuf!()
+        source_line = direct_macro_source_line(logger)
+        source_output = String(take!(buf))
+        @test occursin("direct metadata", source_output)
+        @test occursin("runtests.jl:$source_line", source_output)
+
+        @test_throws ErrorException macroexpand(@__MODULE__, :(@clog logger :core 0))
+        expansion = sprint(show, macroexpand(@__MODULE__, :(@clog logger :core 0 "expanded")))
+        @test !occursin("get_logger", expansion)
     end
 
-    @testset "set_log_level! updates min_level cache" begin
-        # Construct a standalone logger and exercise both lowering and raising the cache
+    @testset "rule snapshots" begin
         local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
         @test Logging.min_enabled_level(logger) === Info
-        state = @atomic :acquire logger.state
-        @test state.min_level === Info
+        @test (@atomic :acquire logger.state).min_level === Info
 
-        ComponentLogging.set_log_level!(logger, :foo, Debug)
-        ComponentLogging.set_log_level!(logger, :bar, Debug)
-        @test Logging.min_enabled_level(logger) === Debug
-        state = @atomic :acquire logger.state
-        @test state.min_level === Debug
+        set_log_level!(logger, :foo, -2000)
+        set_log_level!(logger, :bar, -2000)
+        @test Logging.min_enabled_level(logger) === LogLevel(-2000)
+        @test (@atomic :acquire logger.state).min_level === LogLevel(-2000)
 
-        ComponentLogging.set_log_level!(logger, :foo, Error)
-        @test Logging.min_enabled_level(logger) === Debug
-        state = @atomic :acquire logger.state
-        @test state.min_level === Debug
-
-        ComponentLogging.set_log_level!(logger, :bar, Error)
+        set_log_level!(logger, :foo, 2000)
+        @test Logging.min_enabled_level(logger) === LogLevel(-2000)
+        set_log_level!(logger, :bar, 2000)
         @test Logging.min_enabled_level(logger) === Info
-        state = @atomic :acquire logger.state
-        @test state.min_level === Info
-    end
 
-    @testset "concurrent rule updates" begin
-        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
-        groups = [Symbol("group", string(i)) for i in 1:32]
-
-        @sync for group in groups
-            Threads.@spawn ComponentLogging.set_log_level!(logger, group, Debug)
-        end
-        @test Logging.min_enabled_level(logger) === Debug
-        @test all(group -> clogenabled(logger, group, Debug), groups)
-
-        @sync for group in groups
-            Threads.@spawn ComponentLogging.set_log_level!(logger, group, Error)
-        end
-        @test Logging.min_enabled_level(logger) === Info
-        @test all(group -> !clogenabled(logger, group, Debug), groups)
-    end
-
-    @testset "copy-on-write snapshots" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug); sink)
+        local logger = ComponentLogger(Dict(:__default__ => 0, :a => -2000); sink)
         oldstate = @atomic :acquire logger.state
         oldrules = oldstate.rules
-
-        ComponentLogging.set_log_level!(logger, :a, Error)
+        set_log_level!(logger, :a, 2000)
         newstate = @atomic :acquire logger.state
 
         @test newstate !== oldstate
         @test newstate.rules !== oldrules
-        @test oldrules[(:a,)] === Debug
+        @test oldrules[(:a,)] === LogLevel(-2000)
         @test newstate.rules[(:a,)] === Error
-        @test oldstate.min_level === Debug
+        @test oldstate.min_level === LogLevel(-2000)
         @test newstate.min_level === Info
     end
 
-    @testset "concurrent readers see consistent snapshots" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug); sink)
-        nreaders = max(2, Threads.nthreads())
-        niter = 20_000
+    @testset "set_log_level!" begin
+        local logger = ComponentLogger(Dict(:__default__ => 0, :sw => 0); sink)
+        @test clogenabled(logger, :sw)
+        set_log_level!(logger, :sw, false)
+        @test !clogenabled(logger, :sw)
+        set_log_level!(logger, :sw, true)
+        @test clogenabled(logger, :sw)
 
-        writer = Threads.@spawn begin
-            for i in 1:niter
-                ComponentLogging.set_log_level!(logger, :a, isodd(i) ? Debug : Error)
-            end
-            nothing
-        end
-
-        readers = map(1:nreaders) do _
-            Threads.@spawn begin
-                ok = true
-                for _ in 1:niter
-                    state = @atomic :acquire logger.state
-                    if state.min_level != minimum(values(state.rules))
-                        ok = false
-                        break
-                    end
-                end
-                ok
-            end
-        end
-
-        fetch(writer)
-        @test all(fetch, readers)
-    end
-
-    @testset "concurrent logging and rule updates" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Debug, (:a, :b) => Warn); sink)
-        nreaders = max(2, Threads.nthreads())
-        niter = 20_000
-
-        writer = Threads.@spawn begin
-            for i in 1:niter
-                ComponentLogging.set_log_level!(logger, (:a, :b), isodd(i) ? Debug : Error)
-            end
-            nothing
-        end
-
-        readers = map(1:nreaders) do _
-            Threads.@spawn begin
-                ok = true
-                for _ in 1:niter
-                    ok &= clogenabled(logger, (:a, :b), Info) isa Bool
-                    ok &= clogenabled(logger, :a, Debug) isa Bool
-                end
-                ok
-            end
-        end
-
-        fetch(writer)
-        @test all(fetch, readers)
-    end
-
-    @testset "set_log_level! Bool switch" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :sw => Info); sink)
-        @test clogenabled(logger, :sw) == true
-        ComponentLogging.set_log_level!(logger, :sw, false)
-        @test clogenabled(logger, :sw) == false
-        ComponentLogging.set_log_level!(logger, :sw, true)
-        @test clogenabled(logger, :sw) == true
-    end
-
-    @testset "set_log_level! batch updates" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Warn, :b => Error); sink)
+        logger = ComponentLogger(Dict(:__default__ => 0, :a => 1000, :b => 2000); sink)
         oldstate = @atomic :acquire logger.state
         oldrules = oldstate.rules
-
-        result = ComponentLogging.set_log_level!(
+        result = set_log_level!(
             logger,
-            :a, Debug,
+            :a, -2000,
             :b, false,
-            (:c, :d), Info,
+            (:c, :d), 0,
             :e, true,
         )
         newstate = @atomic :acquire logger.state
@@ -234,59 +215,81 @@ end
         @test newstate.rules !== oldrules
         @test oldrules[(:a,)] === Warn
         @test oldrules[(:b,)] === Error
-        @test newstate.rules[(:a,)] === Debug
+        @test newstate.rules[(:a,)] === LogLevel(-2000)
         @test newstate.rules[(:b,)] === LogLevel(1)
         @test newstate.rules[(:c, :d)] === Info
         @test newstate.rules[(:e,)] === Info
-        @test Logging.min_enabled_level(logger) === Debug
-        @test clogenabled(logger, :a, Debug)
+        @test Logging.min_enabled_level(logger) === LogLevel(-2000)
+        @test clogenabled(logger, :a, -2000)
         @test !clogenabled(logger, :b)
         @test clogenabled(logger, (:c, :d))
         @test clogenabled(logger, :e)
-    end
 
-    @testset "set_log_level! batch rejects odd arguments" begin
-        local logger = ComponentLogger(Dict(:__default__ => Info, :a => Warn); sink)
+        logger = ComponentLogger(Dict(:__default__ => 0, :a => 1000); sink)
         oldstate = @atomic :acquire logger.state
-
-        @test_throws ArgumentError ComponentLogging.set_log_level!(logger, :a, Debug, :b)
+        @test_throws ArgumentError set_log_level!(logger, :a, -2000, :b)
         @test (@atomic :acquire logger.state) === oldstate
-        @test clogenabled(logger, :a, Warn)
-        @test !clogenabled(logger, :a, Debug)
+        @test clogenabled(logger, :a, 1000)
+        @test !clogenabled(logger, :a, -2000)
     end
 
-    @testset "@clog macro literal group" begin
-        clearbuf!()
-        @clog :core Error "macro works"
-        @test !isempty(String(take!(buf)))
+    @testset "concurrent rule access" begin
+        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
+        groups = [Symbol("group", string(i)) for i in 1:32]
+
+        @sync for group in groups
+            Threads.@spawn set_log_level!(logger, group, -2000)
+        end
+        @test Logging.min_enabled_level(logger) === LogLevel(-2000)
+        @test all(group -> clogenabled(logger, group, -2000), groups)
+
+        @sync for group in groups
+            Threads.@spawn set_log_level!(logger, group, 2000)
+        end
+        @test Logging.min_enabled_level(logger) === Info
+        @test all(group -> !clogenabled(logger, group, -2000), groups)
+
+        logger = ComponentLogger(Dict(:__default__ => 0, :a => -2000); sink)
+        nreaders = max(2, Threads.nthreads())
+        niter = 20_000
+        writer = Threads.@spawn begin
+            for i in 1:niter
+                set_log_level!(logger, :a, isodd(i) ? -2000 : 2000)
+            end
+        end
+        readers = map(1:nreaders) do _
+            Threads.@spawn begin
+                for _ in 1:niter
+                    state = @atomic :acquire logger.state
+                    state.min_level == minimum(values(state.rules)) || return false
+                end
+                return true
+            end
+        end
+        fetch(writer)
+        @test all(fetch, readers)
+
+        logger = ComponentLogger(Dict(:__default__ => 0, :a => -2000, (:a, :b) => 1000); sink)
+        writer = Threads.@spawn begin
+            for i in 1:niter
+                set_log_level!(logger, (:a, :b), isodd(i) ? -2000 : 2000)
+            end
+        end
+        readers = map(1:nreaders) do _
+            Threads.@spawn begin
+                for _ in 1:niter
+                    clogenabled(logger, (:a, :b), 0) isa Bool || return false
+                    clogenabled(logger, :a, -2000) isa Bool || return false
+                end
+                return true
+            end
+        end
+        fetch(writer)
+        @test all(fetch, readers)
     end
 
-    @testset "@clog macro no group" begin
-        clearbuf!()
-        @clog Info "macro works (no group)"
-        @test !isempty(String(take!(buf)))
-    end
-
-    @testset "@bind_logger binds module logger" begin
-        old = ComponentLogging.get_logger(@__MODULE__)
-        buf2 = IOBuffer()
-        sink2 = ConsoleLogger(buf2, Debug)
-        rules2 = Dict(:__default__ => Info, :core => Warn)
-
-        lg = @bind_logger sink=sink2 rules=rules2
-        @test lg isa ComponentLogger
-        @test ComponentLogging.get_logger(@__MODULE__) === lg
-
-        @clog :core Warn "bind_logger works"
-        @test occursin("bind_logger works", String(take!(buf2)))
-
-        ComponentLogging.set_module_logger(@__MODULE__, old)
-    end
-
-    @testset "@forward_logger generates forwarding methods" begin
+    @testset "@forward_logger" begin
         take!(ForwardLoggerTest.buf)
-        take!(ForwardLoggerTest2.buf)
-
         ForwardLoggerTest.clog(:__default__, 0, "hello default")
         @test occursin("hello default", String(take!(ForwardLoggerTest.buf)))
 
@@ -300,55 +303,69 @@ end
 
         @test ForwardLoggerTest.get_log_level(:core) === Warn
         ForwardLoggerTest.set_log_level!(:core, 0)
-        @test ForwardLoggerTest.clogenabled(:core, 0) == true
+        @test ForwardLoggerTest.clogenabled(:core, 0)
         @test ForwardLoggerTest.get_log_level(:core) === Info
+        set_log_level!(ForwardLoggerTest.logger, :core, 1000)
 
-        ForwardLoggerTest2.clog(:core, 0, "independent")
-        @test occursin("independent", String(take!(ForwardLoggerTest2.buf)))
+        @test ForwardLoggerTest.macro_side_effects() == [1, 2]
+        @test isempty(String(take!(ForwardLoggerTest.buf)))
+
+        source_line = ForwardLoggerTest.macro_source_line()
+        source_output = String(take!(ForwardLoggerTest.buf))
+        @test occursin("forwarded metadata", source_output)
+        @test occursin("runtests.jl :$source_line", source_output)
+
+        ForwardLoggerConsumer.emit()
+        @test occursin("consumer", String(take!(ForwardLoggerTest.buf)))
+
+        expansion = sprint(show, macroexpand(ForwardLoggerTest, :(@clog :core 1000 "expanded")))
+        @test occursin("ForwardLoggerTest.logger", expansion)
+        @test !occursin("get_logger", expansion)
+
+        take!(ForwardLoggerFieldTest.buf)
+        ForwardLoggerFieldTest.emit()
+        @test occursin("field logger", String(take!(ForwardLoggerFieldTest.buf)))
+
+        field_buf = IOBuffer()
+        ForwardLoggerFieldTest.state[] = (
+            logger=ComponentLogger(Dict(:__default__ => 2000); sink=PlainLogger(stream=field_buf)),
+        )
+        ForwardLoggerFieldTest.emit()
+        @test isempty(String(take!(field_buf)))
     end
-end;
+end
 
 @testset "PlainLogger + ComponentLogger" begin
-    # 1) Basic logging into an IOBuffer via PlainLogger sink
     pbuf = IOBuffer()
-    plogger = PlainLogger(stream=pbuf, min_level=Debug)
+    plogger = PlainLogger(stream=pbuf)
     clogger = ComponentLogger(sink=plogger)
-    set_module_logger(@__MODULE__, clogger)
 
-    # ensure info is emitted to pbuf
-    clog(clogger, :__default__, Info, "plain info")
+    clog(clogger, :__default__, 0, "plain info")
     @test !isempty(String(take!(pbuf)))
 
-    # kwargs appear
-    clog(clogger, :__default__, Info, "with kw"; a=1, b="x")
+    clog(clogger, :__default__, 0, "with kw"; a=1, b="x")
     out = String(take!(pbuf))
     @test occursin("a = 1", out)
     @test occursin("b = x", out)
 
-    # 2) Warn and location: using macro to ensure file/line is passed
     pbuf2 = IOBuffer()
-    plogger2 = PlainLogger(stream=pbuf2, min_level=Debug)
+    plogger2 = PlainLogger(stream=pbuf2)
     clogger2 = ComponentLogger(sink=plogger2)
-    set_module_logger(@__MODULE__, clogger2)
-    @clog :core Warn "warn here"
+    @clog clogger2 :core 1000 "warn here"
     out2 = String(take!(pbuf2))
     @test occursin("warn here", out2)
-    @test occursin("runtests.jl", out2)  # basename present
+    @test occursin("runtests.jl", out2)
 
-    # 3) closed-stream fallback to stderr (use Pipe on Windows)
-    plogger3 = PlainLogger(min_level=Info)
+    plogger3 = PlainLogger()
     clogger3 = ComponentLogger(sink=plogger3)
-    set_module_logger(@__MODULE__, clogger3)
-
     w = Pipe()
     redirect_stderr(w)
     try
-        clog(clogger3, :__default__, Warn, "fallback to stderr")
+        clog(clogger3, :__default__, 1000, "fallback to stderr")
         flush(stderr)
     finally
         redirect_stderr(stdout)
     end
     close(w.in)
-    data = read(w, String)
-    @test occursin("fallback to stderr", data)
-end;
+    @test occursin("fallback to stderr", read(w, String))
+end

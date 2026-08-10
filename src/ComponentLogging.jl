@@ -5,7 +5,7 @@ export PlainLogger
 
 export ComponentLogger, get_logger, set_module_logger, set_log_level!, get_log_level, with_min_level
 export clog, clogenabled, clogf
-export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @clogenabled, @clogf, @forward_logger
+export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @forward_logger
 
 const RuleKey = NTuple{N,Symbol} where {N}
 const Default_Sym = :__default__
@@ -144,76 +144,6 @@ end
 Logging.handle_message(logger::ComponentLogger, level::LogLevel, message, _module, group, id, file, line; kwargs...) =
     Logging.handle_message(logger.sink, level, message, _module, group, id, file, line; kwargs...)
 
-## Module registry
-mutable struct _RegistryState
-    const loggers::IdDict{Module,AbstractLogger}
-end
-
-mutable struct _RegistryStore
-    @atomic state::_RegistryState
-    const lock::ReentrantLock
-end
-
-const _Registry = _RegistryStore(
-    _RegistryState(IdDict{Module,AbstractLogger}()),
-    ReentrantLock(),
-)
-
-function set_module_logger(mod::Module, logger::AbstractLogger)::String
-    @lock _Registry.lock begin
-        state = @atomic :acquire _Registry.state
-        loggers = copy(state.loggers)
-        loggers[mod] = logger
-        @atomic :release _Registry.state = _RegistryState(loggers)
-    end
-    string(mod) * " <- " * string(typeof(logger))
-end
-
-"Get the logger for the calling module; if unbound, fallback through parent modules; error at the top"
-@inline function get_logger(mod::Module)
-    loggers = (@atomic :acquire _Registry.state).loggers
-    m = mod
-    while true
-        logger = get(loggers, m, nothing)
-        logger !== nothing && return logger
-        pm = parentmodule(m)
-        if pm === m   # reached the top (e.g. Base/Core/Main)
-            throw(ErrorException("the current module and its parent modules have no logger bound"))
-        end
-        m = pm
-    end
-end
-
-## Module binding macro
-macro bind_logger(args...)
-    sink_ex  = nothing
-    rules_ex = :(Dict{ComponentLogging.RuleKey,LogLevel}((ComponentLogging.Default_Sym,) => Logging.Info))
-    mod_ex   = :(@__MODULE__)
-
-    for a in args
-        if a isa Expr && a.head === :(=)
-            key, val = a.args[1], a.args[2]
-            key === :sink  ? sink_ex = val  :
-            key === :rules ? rules_ex = val :
-            key === :mod   ? mod_ex = val   :
-            error("@bind_logger: unsupported keyword $(key). Allowed: sink= / rules= / mod=")
-        else
-            error("@bind_logger: only accepts keyword arguments (sink=..., rules=..., mod=...)")
-        end
-    end
-
-    sink_ex === nothing && error("@bind_logger: missing required sink=... (please pass any AbstractLogger)")
-
-    return quote
-        # Construct locals at runtime to avoid capturing global objects during precompilation
-        local _sink = $(esc(sink_ex))
-        local _rules = $(esc(rules_ex))
-        local _logger = ComponentLogging.ComponentLogger(_rules; sink=_sink)
-        ComponentLogging.set_module_logger($(esc(mod_ex)), _logger)
-        _logger
-    end
-end
-
 ## Pretty show for ComponentLogger
 _lvname(lv::LogLevel) = string(lv)
 
@@ -336,7 +266,7 @@ function Base.show(io::IO, ::MIME"text/plain", logger::ComponentLogger)
     _print_tree(io, rules)
 end
 
-include("helpers.jl")
+include("api.jl")
 include("docstrings.jl")
 
 end # module

@@ -3,10 +3,8 @@
 [![Dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://julialogging.github.io/ComponentLogging.jl/dev/)
 [![Build Status](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 [![Benchmarks](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/Benchmarks.yml/badge.svg)](https://julialogging.github.io/ComponentLogging.jl/benchmarks/)
-[![ColPrac: Contributor's Guide on Collaborative Practices for Community Packages](https://img.shields.io/badge/ColPrac-Contributor's%20Guide-blueviolet)](https://github.com/SciML/ColPrac)
-[![PkgEval](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.svg)](https://JuliaCI.github.io/NanosoldierReports/pkgeval_badges/C/ComponentLogging.html)
 
-ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around *module-scoped component logging* and *hierarchical log-level control*.
+ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around *explicit component loggers* and *hierarchical log-level control*.
 
 Unlike Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
 
@@ -16,7 +14,7 @@ Unlike Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Loggin
 julia>] add ComponentLogging
 ```
 
-## Quick Start
+## Quick start
 
 ```julia
 using ComponentLogging
@@ -34,7 +32,7 @@ clogger = ComponentLogger(rules; sink) # router/filter; does not own IO
 
 @forward_logger clogger
 
-clog(:core, 0, "starting job"; jobid=42)  # 0 = Info
+clog(:core, 0, "starting job"; jobid=42)   # 0 = Info
 clog(:io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
 ```
 
@@ -96,7 +94,9 @@ get_log_level(clogger, (:solver, :heuristics))
 
 ### Core APIs
 
-This package exposes three small, *function-first* APIs for logging. You use them everywhere; the router (`ComponentLogger`) and its rules just decide *what* gets through.
+`clog`
+
+Emits a log record for a group at a given level.
 
 ```julia
 clog(logger,        group, level, msg...; kwargs...)
@@ -110,18 +110,18 @@ Typically you pass a `ComponentLogger` configured with per-group rules and a sin
 * `group::Union{Symbol,NTuple{N,Symbol}}` — a `Symbol` or a tuple of symbols, e.g. `:core` or `(:net, :http)`.
 * `level::Union{Integer,LogLevel}` — prefer integers (no need to import `Logging`). We immediately convert with `LogLevel(level)`.
   * Mapping (integers first): `-1000 (Debug)`, `0 (Info)`, `1000 (Warn)`, `2000 (Error)`.
-  * General rule:  `n → LogLevel(n)`.
-  * Passing `LogLevel` values (e.g. `Info`) is also supported and equivalent.
 
-**`clog` — emit a log record for a group at a given level**
-
+**Example:**
 ```julia
 clog(clogger, :core,  0, "starting job"; jobid=42)   # 0 = Info
-clog(clogger, :io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
+clog(clogger, :io, 1000, "retrying I/O"; attempt=3)  # 1000 = Warn
 ```
 
-**`clogenabled` — check if logs at `level` would pass for `group`**
+`clogenabled`
 
+Checks whether records at `level` are enabled for `group`.
+
+**Example:**
 ```julia
 if clogenabled(clogger, :core, 1000)  # guard expensive work
     stats = compute_expensive_stats()
@@ -129,8 +129,11 @@ if clogenabled(clogger, :core, 1000)  # guard expensive work
 end
 ```
 
-**`clogf` — evaluate the block only when enabled and log its return value**
+`clogf`
 
+Evaluates the block only when enabled and logs its return value.
+
+**Example:**
 ```julia
 clogf(clogger, :core, 1000) do
     val = compute_expensive_stats()
@@ -138,24 +141,30 @@ clogf(clogger, :core, 1000) do
 end
 ```
 
-**`@forward_logger` — ergonomic short paths used throughout your codebase**
+`@clog`
+
+Use `@clog logger group level msg...`, or after `@forward_logger`, the local
+form `@clog group level msg...`. It evaluates message expressions only when
+logging is enabled, keeps them inline to avoid closure capture, and captures the
+emitting call's module, file, and line automatically. If the final message
+expression evaluates to `nothing`, no log record is emitted.
+
+`@forward_logger`
 
 ```julia
 @forward_logger clogger
 ```
 
-The macro above is equivalent to defining the following forwarding methods at module top-level (shown here for clarity):
+This creates module-local forwarding methods for `clog`, `clogenabled`,
+`clogf`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus a local
+`@clog` that uses `clogger`. The logger expression is bound where
+`@forward_logger` is declared, including when the generated macro is imported
+by another module.
 
-```julia
-clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)
-clogenabled(args...)     = ComponentLogging.clogenabled(clogger, args...)
-clogf(f, args...)        = ComponentLogging.clogf(f, clogger, args...)
-set_log_level!(g, lvl)   = ComponentLogging.set_log_level!(clogger, g, lvl)
-get_log_level(g)         = ComponentLogging.get_log_level(clogger, g)
-with_min_level(f, lvl)   = ComponentLogging.with_min_level(f, clogger, lvl)
-```
+For example, the generated `clog` is conceptually equivalent to the following module-local forwarding method:
+`clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)`
 
-### More examples
+## More examples
 
 Assuming you set up the forwarding helpers, you can use `clog` like this:
 
@@ -233,19 +242,13 @@ with_min_level(2000) do
 end
 ```
 
-### Notes
-
-* **Routing vs. formatting**: `ComponentLogger` only routes/filters; the **sink** (`PlainLogger` or any `AbstractLogger`) controls formatting/IO.
-* **Grouping**: groups are `Symbol` or tuples of `Symbol`, matched hierarchically by prefix.
-* The function API is the primary entry point. Macro helpers are also provided for convenience. See the [Documentation](https://julialogging.github.io/ComponentLogging.jl/dev/).
-
 ## PlainLogger
 
-`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`-style prefixes. Its output looks like `print`/`println`, subject to its configured `min_level` filter.
+`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`-style prefixes. Its output looks like `print`, subject to its configured `min_level` filter. When wrapped by `ComponentLogger`, the component rules decide whether a record is enabled.
 
 `PlainLogger` and `ComponentLogger` are independent. You can also `include("src/PlainLogger.jl")` to use `PlainLogger` on its own.
 
-Example:
+**Example:**
 
 ```julia
 using ComponentLogging, Logging
@@ -287,11 +290,11 @@ ComponentLogging is continuously benchmarked over time. Current and historical p
 
 [**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers with *hierarchically-related objects* (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree. 
 
-[**ComponentLogging.jl**][3] takes a different approach: it is a lightweight, performance-oriented layer over `Base.CoreLogging` built around *module-scoped component logging* and hierarchical group rules. It routes accepted records to any `AbstractLogger` sink, keeps filtered paths extremely cheap, and also exposes the same hierarchy as a lightweight runtime control plane through `clogenabled` and Boolean level switches. For execution-specific logging, the explicit `clog`/`clogf`/`clogenabled` APIs can bypass module-registry lookup entirely.
+[**ComponentLogging.jl**][3] takes a different approach: it is a lightweight, performance-oriented layer over `Base.CoreLogging` built around explicit component loggers and hierarchical group rules. It routes accepted records to any `AbstractLogger` sink, keeps filtered paths extremely cheap, and also exposes the same hierarchy as a lightweight runtime control plane through `clogenabled` and Boolean level switches.
 
 > - Choose **Memento.jl** for a self-contained logging framework with hierarchical named loggers and a rich handler/formatter system.
 > - Choose **HierarchicalLogging.jl** for stdlib-compatible hierarchical control over hierarchically related objects with recursive level management.
-> - Choose **ComponentLogging.jl** for module-scoped hierarchical control, very low filtered-call overhead, direct composition with `AbstractLogger` sinks, and a hierarchy that can double as a runtime control plane.
+> - Choose **ComponentLogging.jl** for explicit hierarchical control, very low filtered-call overhead, direct composition with `AbstractLogger` sinks, and a hierarchy that can double as a runtime control plane.
 
 [1]: https://invenia.github.io/Memento.jl/latest/ "Home · Memento.jl"
 [2]: https://github.com/curtd/HierarchicalLogging.jl "GitHub - curtd/HierarchicalLogging.jl: Loggers, loggers everywhere"

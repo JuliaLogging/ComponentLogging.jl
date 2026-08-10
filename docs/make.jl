@@ -12,15 +12,14 @@ makedocs(;
         edit_link = "master",
         assets    = String[],
     ),
-    pages    = [
+    pages=[
         "Home" => "index.md",
         "Guide" => [
             "Hierarchical Runtime Control" => "runtime_control.md",
         ],
-        "API"  => [
+        "Reference" => [
             "Common Types" => "common_types.md",
-            "Functions"    => "functions.md",
-            "Macros"       => "macros.md",
+            "Logging"    => "logging.md",
         ],
     ],
 )

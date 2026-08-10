@@ -6,7 +6,7 @@ CurrentModule = ComponentLogging
 
 ## `ComponentLogger`
 
-`ComponentLogger` is the central router/filter in ComponentLogging. It associates hierarchical group keys with minimum log levels and delegates accepted messages to an `AbstractLogger` sink.
+`ComponentLogger` is the central router/filter in ComponentLogging. It associates hierarchical group keys with minimum integer log levels and delegates accepted messages to an `AbstractLogger` sink.
 
 Groups can be a `Symbol` or a tuple of symbols:
 
@@ -20,49 +20,48 @@ A more specific rule takes precedence over its parent. If no exact rule exists, 
 
 ```julia
 logger = ComponentLogger(Dict(
-    :__default__ => 0,
     :solver => 1000,
-    (:solver, :iteration) => -1000,
+    (:solver, :iteration) => -2000,
 ); sink=PlainLogger())
 ```
 
-In this example, `:solver` and its unmatched descendants require `Warn`, while `(:solver, :iteration)` explicitly accepts `Debug` and above.
+Here `:solver` and unmatched descendants require level `1000`, while `(:solver, :iteration)` accepts level `-2000` and above.
 
-`display(logger)` prints the configured hierarchy in tree form, which is useful when inspecting a larger component configuration.
+`display(logger)` prints the configured hierarchy as a tree.
 
 ### Concurrency and ownership
 
-`ComponentLogger` is designed for shared concurrent use. Thread-safe configuration updates were introduced in v0.2.0; since v0.3.0, copy-on-write snapshots with atomic publication keep normal reads lock-free while configuration updates remain safe.
+`ComponentLogger` is safe to share across tasks and threads. Rule updates are serialized and published as atomic copy-on-write snapshots, while normal reads remain lock-free. Each snapshot includes a cached minimum level for fast rejection.
 
-The logger owns routing/filtering state, not the final output mechanism. Accepted messages are delegated to `logger.sink`, so message-output thread safety depends on the selected sink.
+!!! info Thread safety was introduced in v0.2.0. High-performance copy-on-write snapshots were introduced in v0.3.0.
+
+The logger owns routing/filtering state, not final output. Accepted records are delegated to `logger.sink`; output thread safety therefore depends on the sink.
 
 ## Changing rules
 
-Use `set_log_level!` to update one group dynamically:
+Use `set_log_level!` to update rules:
 
 ```julia
 set_log_level!(logger, :solver, 1000)
-set_log_level!(logger, (:solver, :iteration), -1000)
+set_log_level!(logger, (:solver, :iteration), -2000)
 ```
 
-Multiple `group, level` pairs can also be applied atomically in one call:
+Multiple `group, level` pairs are applied atomically in one update:
 
 ```julia
 set_log_level!(logger,
     :solver, 1000,
-    (:solver, :iteration), -1000,
+    (:solver, :iteration), -2000,
     (:solver, :heuristics), false,
 )
 ```
 
-Boolean values provide a compact switch interface:
+Boolean levels provide a compact switch interface. `true` maps to `0`; `false` maps to `1`, which pairs naturally with the no-level `clogenabled(logger, group)` check. See [Hierarchical Runtime Control](@ref) for broader use of this mechanism.
 
 ```julia
 set_log_level!(logger, (:solver, :heuristics), true)
 set_log_level!(logger, (:solver, :heuristics), false)
 ```
-
-`true` maps to level `0` (`Info`) and `false` maps to level `1`, which pairs naturally with the no-level `clogenabled(logger, group)` check. See [Hierarchical Runtime Control](@ref) for broader use of this mechanism.
 
 ## Inspecting effective levels
 
@@ -80,29 +79,27 @@ get_log_level(logger, (:solver, :iteration))
 
 ```julia
 with_min_level(logger, 2000) do
-    # The temporary minimum applies to every task/thread using this logger.
     run_workload()
 end
 ```
 
 This is a **logger-wide temporary override**, not a task-local equivalent of `Logging.with_logger`. All users of the target logger observe the temporary minimum until the callback exits, after which the previous state is restored even if the callback throws.
 
-Treat the block as a temporary configuration scope: configuration changes made to the same logger inside the block do not persist after the outer snapshot is restored.
+!!! warning The temporary level applies to every task and thread using that logger. The old snapshot is restored even if the callback throws, so configuration changes to the same logger inside the callback do not persist afterward.
 
 ## `PlainLogger`
 
 `PlainLogger` is an independent `AbstractLogger` sink that keeps console output close to ordinary `print`/`println` output instead of adding the standard `[ Info:`-style presentation. It can be used as the sink of a `ComponentLogger` or on its own with Julia's standard `with_logger`.
 
 ```julia
-using ComponentLogging, Logging
-
 sink = PlainLogger()
 logger = ComponentLogger(Dict(:core => 0); sink)
-
 clog(logger, :core, 0, "hello")
 ```
 
 Routing and presentation are intentionally separate: `ComponentLogger` decides whether a record passes, while `PlainLogger` (or any other `AbstractLogger` sink) decides how accepted records are written.
+
+When used alone with `Logging.with_logger`, `PlainLogger.min_level` controls its own filtering. When it is wrapped by `ComponentLogger`, ComponentLogging's rules perform the enabled check, so the sink's `min_level` does not participate.
 
 ## Reference
 

@@ -6,6 +6,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.0-beta1] - 2026-08-10
+### Added
+- `@forward_logger` now creates a local `@clog` bound to its logger expression.
+### Changed
+- **Breaking:** `@clog` and the `@c*` shorthands now require an explicit logger argument.
+- **Breaking:** `@clog` now discards a record when its final message expression evaluates to `nothing`.
+### Removed
+- **Breaking:** Removed the module logger registry, `get_logger`, `set_module_logger`, and `@bind_logger`.
+- **Breaking:** Removed the `@clogenabled` and `@clogf` macros; use `clogenabled` and `clogf` instead.
+
 ## [0.4.0] - 2026-08-09
 ### Added
 - `@forward_logger` now generates a `get_log_level(group)` forwarding helper.

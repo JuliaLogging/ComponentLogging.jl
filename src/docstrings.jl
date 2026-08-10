@@ -1,12 +1,12 @@
 @doc """
     ComponentLogging
 
-Module-scoped logging utilities for Julia built on top of the stdlib `Logging`. This package provides:
+Hierarchical component logging built on Julia's standard `Logging` interface. This package provides:
 
 - A `ComponentLogger` with hierarchical rule keys to control log levels per component path, e.g. `(:net, :http)`.
-- Lightweight functions `clog`, `clogenabled`, `clogf` for emitting messages and checking if logging is enabled.
-- Macros `@clog`, `@clogf`, `@clogenabled` that capture the caller module/source location for accurate provenance.
-- Macro `@forward_logger` to generate module-local forwarding methods.
+- Explicit functions `clog`, `clogenabled`, and `clogf`.
+- Explicit logging macros `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` with caller metadata.
+- `@forward_logger`, which creates module-local forwarding functions and a local `@clog`.
 - A simple `PlainLogger` sink for plain output without timestamps or standard prefixes.
 
 Typical usage:
@@ -15,13 +15,13 @@ Typical usage:
 using ComponentLogging
 
 rules = Dict(
-    :core => Info,
-    :io => Warn,
-    :net => Debug
+    :core => 0,
+    :io => 1000,
+    :net => -2000,
 )
 clogger = ComponentLogger(rules; sink=PlainLogger())
 
-clog(clogger, :core, Info, "something happened")
+clog(clogger, :core, 0, "something happened")
 ```
 """ ComponentLogging
 
@@ -47,7 +47,7 @@ ComponentLogger
 
 Set or update the minimum level for a specific component `group` on `logger`. `group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel`, `Integer`, or `Bool`. Additional `args...` are accepted as more `group, level` pairs and are applied atomically in one update.
 
-If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `Info` and `false` sets it to `LogLevel(1)` (which disables the default `clogenabled(logger, group)` check).
+If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `0` and `false` sets it to `1` (which disables the default `clogenabled(logger, group)` check).
 
 Rule updates are thread-safe and atomic.
 
@@ -70,7 +70,7 @@ path, then its parent paths, and finally `(:__default__,)`.
 Example:
 
 ```julia
-logger = ComponentLogger(Dict(:solver => Warn))
+logger = ComponentLogger(Dict(:solver => 1000))
 get_log_level(logger, (:solver, :iteration))
 # Warn
 ```
@@ -89,42 +89,9 @@ restored.
 with_min_level
 
 """
-    get_logger(mod::Module) -> AbstractLogger
+    clog(logger, group, level, msg...; _module, id, file, line, kwargs...)
 
-Return the logger bound to module `mod`, walking up parent modules if necessary.
-Throws an error if none is found at the root.
-"""
-get_logger
-
-"""
-    set_module_logger(mod::Module, logger::AbstractLogger) -> String
-
-Bind `logger` to the module `mod`. Returns a short human-readable string summary
-`"<Module> <- <LoggerType>"`.
-"""
-set_module_logger
-
-"""
-    @bind_logger [sink=...] [rules=...] [mod=...]
-
-Bind a `ComponentLogger` to the given `mod` (default: caller's module).
-Arguments must be passed as keywords. `rules` may be any `AbstractDict`
-mapping groups (`Symbol` or `NTuple{N,Symbol}`) to levels (`LogLevel` or `Integer`).
-
-Returns the constructed `ComponentLogger`.
-
-Example:
-
-```julia
-@bind_logger sink=ConsoleLogger() rules=Dict(:__default__=>Info, :core=>Warn)
-```
-"""
-:(@bind_logger)
-
-"""
-    clog(logger, group, level, msg...; _module, file, line, kwargs...)
-
-Emit a log message through the given or implicit logger. `group` is a `Symbol`
+Emit a log message through the given `logger`. `group` is a `Symbol`
 or `NTuple{N,Symbol}`. `level` may be `LogLevel` or `Integer`. `msg` can be one
 or more values; tuples are passed through as-is.
 
@@ -145,7 +112,7 @@ clog
     clogenabled(logger, group) -> Bool
 
 Return whether logging is enabled for the given `logger`, `group`, and `level`.
-If `level` is omitted, `Info` is used.
+If `level` is omitted, `0` is used.
 
 If `@forward_logger` is already used, the following forwarding signatures are available:
 
@@ -173,77 +140,70 @@ clogf(f, group, level; _module, file, line)
 clogf
 
 """
-    @clog [group] level msg...
+    @clog logger group level msg...
 
 Macro version of `clog` that captures the caller's `Module`, `file`, and `line`
-for accurate provenance. `group` must be a literal `Symbol` or tuple of literal
-symbols.
+for accurate provenance. All positional arguments are required, including at
+least one message expression. `group` and `level` may be runtime expressions.
+
+Message expressions are evaluated only after logging is enabled. They remain
+inline rather than being wrapped in the zero-argument closure used by `clogf`,
+avoiding closure capture of surrounding local variables. Unlike `clog`, caller
+metadata is captured automatically rather than supplied as keywords.
+
+When logging is enabled, all message expressions are evaluated from left to
+right. If the final expression evaluates to `nothing`, the log record is
+discarded and `Logging.handle_message` is not called.
 
 Example:
 ```julia
-@clog 0 "hello"             # default group
-@clog :core 1000 "hello"    # single group (literal)
-@clog (:a,:b) 2000 "hello"  # specified group (literal)
+@clog logger :core 0 "hello"
+@clog logger (:a, :b) 2000 "hello"
 ```
 """
 :(@clog)
 
 """
-    @cdebug args...
+    @cdebug logger group msg...
 
-Shorthand for `@clog Debug args...`. Emits a message at `Debug` level. See `@clog` for argument rules and caller metadata capture.
+Shorthand for `@clog logger group -2000 msg...`.
 """
 :(@cdebug)
 
 """
-    @cinfo args...
+    @cinfo logger group msg...
 
-Shorthand for `@clog Info args...`. Emits a message at `Info` level. See `@clog` for argument rules and caller metadata capture.
+Shorthand for `@clog logger group 0 msg...`.
 """
 :(@cinfo)
 
 """
-    @cwarn args...
+    @cwarn logger group msg...
 
-Shorthand for `@clog Warn args...`. Emits a message at `Warn` level. See `@clog` for argument rules and caller metadata capture.
+Shorthand for `@clog logger group 1000 msg...`.
 """
 :(@cwarn)
 
 """
-    @cerror args...
+    @cerror logger group msg...
 
-Shorthand for `@clog Error args...`. Emits a message at `Error` level. See `@clog` for argument rules and caller metadata capture.
+Shorthand for `@clog logger group 2000 msg...`.
 """
 :(@cerror)
 
 """
-    @clogenabled group level
-
-Macro that expands to a boolean expression answering whether logging is enabled
-for the literal `group` and `level` at the call site (using the logger bound to
-the caller's module). `group` must be a literal `Symbol` or tuple of literal
-symbols.
-"""
-:(@clogenabled)
-
-"""
-    @clogf [group] level expr
-
-Macro version of `clogf`. The last argument can be either a message expression
-or a zero-argument function (e.g. `() -> begin ...; "message" end`). The body
-is only evaluated if logging is enabled. Caller module and source location are
-captured automatically.
-"""
-:(@clogf)
-
-"""
-    @forward_logger logger
+    @forward_logger logger_expr
 
 Define forwarding methods in the current module so you can call `clog`, `clogf`,
 `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level` without
-explicitly passing a logger each time.
+explicitly passing a logger each time. Also define a local `@clog group level
+msg...` bound to `logger_expr`.
 
-`logger` may be either an `AbstractLogger` or a `Base.RefValue{<:AbstractLogger}`.
+`logger_expr` may be an `AbstractLogger`, a `Ref` holding one, or an expression
+such as `STATE[].logger`. Its names are bound in the module that invokes
+`@forward_logger`; importing the generated `@clog` elsewhere does not change
+which logger expression it uses. The expression is evaluated at each call, so
+replacing a `Ref` value affects subsequent calls.
 
 Example:
 
@@ -254,6 +214,7 @@ const pkg_logger = Ref(ComponentLogger(...))
 @forward_logger pkg_logger
 
 clog(:core, 0, "hello")
+@clog :core 0 "hello"
 clogf(:core, 0) do
     ("expensive ", 1 + 2)
 end
@@ -279,5 +240,8 @@ prefixes or timestamps.
 - `min_level::LogLevel`: minimum enabled level for the sink.
 
 Intended for tests, demos, or embedding in custom sinks.
+
+When used as a `ComponentLogger` sink, `ComponentLogger` performs the enabled
+check and `PlainLogger.min_level` does not participate.
 """
 PlainLogger
