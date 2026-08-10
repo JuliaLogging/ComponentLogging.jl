@@ -100,8 +100,6 @@ Emits a log record for a group at a given level.
 
 ```julia
 clog(logger,        group, level, msg...; kwargs...)
-clogenabled(logger, group, level)::Bool
-clogf(f::Function,  logger, group, level)
 ```
 
 **Arguments:**
@@ -129,25 +127,30 @@ if clogenabled(clogger, :core, 1000)  # guard expensive work
 end
 ```
 
-`clogf`
+`@clog`
 
 Evaluates the block only when enabled and logs its return value.
-
-**Example:**
-```julia
-clogf(clogger, :core, 1000) do
-    val = compute_expensive_stats()
-    "result = $val"
-end
-```
-
-`@clog`
 
 Use `@clog logger group level msg...`, or after `@forward_logger`, the local
 form `@clog group level msg...`. It evaluates message expressions only when
 logging is enabled, keeps them inline to avoid closure capture, and captures the
 emitting call's module, file, and line automatically. If the final message
 expression evaluates to `nothing`, no log record is emitted.
+
+```julia
+arr = randn(1000)
+sumsq = 0.0
+for i in eachindex(arr)
+    x = arr[i]
+    sumsq += x^2
+    @clog :core 1 begin
+        meanval = mean(arr[1:i])
+        stdval = std(arr[1:i])
+        # The return value will be used as the log message
+        "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)"
+    end
+end
+```
 
 `@forward_logger`
 
@@ -156,7 +159,7 @@ expression evaluates to `nothing`, no log record is emitted.
 ```
 
 This creates module-local forwarding methods for `clog`, `clogenabled`,
-`clogf`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus a local
+`set_log_level!`, `get_log_level`, and `with_min_level`, plus a local
 `@clog` that uses `clogger`. The logger expression is bound where
 `@forward_logger` is declared, including when the generated macro is imported
 by another module.
@@ -208,27 +211,6 @@ end
 ```
 
 By guarding with `clogenabled`, intermediate computations are performed only when logs will be emitted, maximizing performance.
-
-### Lazy messages — `clogf`
-
-`clogf` is similar to `clogenabled`, except it logs the return value of the `do`-block. When disabled, the block is skipped entirely.
-
-```julia
-function compute_sumsq()
-    arr = randn(1000)
-    sumsq = 0.0
-    for i in eachindex(arr)
-        x = arr[i]
-        sumsq += x^2
-        clogf(:core, 1) do
-            meanval = mean(arr[1:i])
-            stdval = std(arr[1:i])
-            # The return value will be used as the log message
-            "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)"
-        end
-    end
-end
-```
 
 ### Temporarily raise/lower the minimum level
 

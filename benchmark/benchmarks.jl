@@ -31,27 +31,9 @@ end
 const LG_ENABLED  = make_logger(0)     # Allow level 0
 const LG_FILTERED = make_logger(2000)  # Filter out level 0
 
-## Benchmark messages/closures
+## Benchmark messages
 const MSG_STR = "x"
 const MSG_TUP = ("x", 123, :sym)   # Multiple arguments/mixed types
-const HEAVY_1 = () -> begin
-    s = 0.0
-    @inbounds for i = 1:200
-        s = muladd(s, 1.0001, i)
-    end
-    "x $(s)"
-end
-const HEAVY_1_NOLOG = () -> begin
-    s = 0.0
-    @inbounds for i = 1:200
-        s = muladd(s, 1.0001, i)
-    end
-    nothing
-end
-# Lightweight forwarding
-@inline _clogf_call(lg, group, lvl, f) = CL.clogf(f, lg, group, lvl)
-@inline _clogf_call_default(lg, lvl, f) = CL.clogf(f, lg, DEFAULT, lvl)
-
 ## Suite
 const Suite = BenchmarkGroup()
 
@@ -61,10 +43,6 @@ Suite["filtered"]["clog/default"]  = @benchmarkable CL.clog($LG_FILTERED, $DEFAU
 Suite["filtered"]["clog/symbol"]   = @benchmarkable CL.clog($LG_FILTERED, :opti, 0, $MSG_STR)
 Suite["filtered"]["clog/tuple2"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP2, 0, $MSG_STR)
 Suite["filtered"]["clog/tuple8"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP8, 0, $MSG_STR)
-Suite["filtered"]["clogf/default"] = @benchmarkable _clogf_call_default($LG_FILTERED, 0, $HEAVY_1)     # HEAVY_1 should not execute
-Suite["filtered"]["clogf/symbol"]  = @benchmarkable _clogf_call($LG_FILTERED, :opti, 0, $HEAVY_1)
-Suite["filtered"]["clogf/tuple2"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP2, 0, $HEAVY_1)
-Suite["filtered"]["clogf/tuple8"]  = @benchmarkable _clogf_call($LG_FILTERED, $TUP8, 0, $HEAVY_1)
 
 # 2) Allowed path (min=0, sending 0) - Decision + assembly + call
 Suite["enabled"] = BenchmarkGroup()
@@ -77,13 +55,6 @@ Suite["enabled"]["clog/tuple8/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8
 Suite["enabled"]["clog/default/tuple"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, 0, $MSG_TUP...)
 Suite["enabled"]["clog/tuple2/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, 0, $MSG_TUP...)
 Suite["enabled"]["clog/tuple8/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, 0, $MSG_TUP...)
-# 2.3 clogf: Only execute heavy work when allowed
-Suite["enabled"]["clogf/default/heavy"] = @benchmarkable _clogf_call_default($LG_ENABLED, 0, $HEAVY_1)
-Suite["enabled"]["clogf/tuple2/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP2, 0, $HEAVY_1)
-Suite["enabled"]["clogf/tuple8/heavy"]  = @benchmarkable _clogf_call($LG_ENABLED, $TUP8, 0, $HEAVY_1)
-# 2.4 clogf: Allowed but chose not to output (returns nothing)
-Suite["enabled"]["clogf/default/nolog"] = @benchmarkable _clogf_call_default($LG_ENABLED, 0, $HEAVY_1_NOLOG)
-
 # 3) Explicit macro path
 Suite["enabled"]["@clog"] = @benchmarkable CL.@clog $LG_ENABLED :opti 0 $MSG_STR
 Suite["filtered"]["@clog"] = @benchmarkable CL.@clog $LG_FILTERED :opti 0 $MSG_STR
@@ -116,23 +87,15 @@ end
 #=
 ===== SUMMARY (ns/op，allocs) =====
 filtered/clog/tuple2                  3.50 ns        0 allocs     0.00 KiB
-filtered/clogf/symbol                 2.80 ns        0 allocs     0.00 KiB
-filtered/clogf/tuple8                 2.60 ns        0 allocs     0.00 KiB
 filtered/clog/default                 2.80 ns        0 allocs     0.00 KiB
-filtered/clogf/default                2.80 ns        0 allocs     0.00 KiB
-filtered/clogf/tuple2                 3.70 ns        0 allocs     0.00 KiB
 filtered/clog/symbol                  2.40 ns        0 allocs     0.00 KiB
 filtered/clog/tuple8                  2.40 ns        0 allocs     0.00 KiB
-enabled/clogf/default/nolog          14.03 ns        0 allocs     0.00 KiB
 enabled/clog/default/str             15.53 ns        0 allocs     0.00 KiB
-enabled/clogf/tuple2/heavy          419.10 ns        6 allocs     0.60 KiB
 enabled/clog/tuple2/str              24.80 ns        0 allocs     0.00 KiB
 enabled/clog/tuple8/tuple           188.63 ns        0 allocs     0.00 KiB
-enabled/clogf/tuple8/heavy          591.57 ns        6 allocs     0.60 KiB
 enabled/clog/symbol/str              13.73 ns        0 allocs     0.00 KiB
 enabled/clog/default/tuple           15.53 ns        0 allocs     0.00 KiB
 enabled/clog/tuple2/tuple            24.80 ns        0 allocs     0.00 KiB
-enabled/clogf/default/heavy         403.02 ns        6 allocs     0.60 KiB
 enabled/clog/tuple8/str             191.80 ns        0 allocs     0.00 KiB
 ====================================
 =#

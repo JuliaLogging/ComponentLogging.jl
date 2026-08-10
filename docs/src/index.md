@@ -37,7 +37,7 @@ In performance-sensitive numerical and systems code, disabled log calls may exec
 ComponentLogging therefore keeps the normal read path deliberately small:
 
 - module/component configuration is shared rather than discovered from task-local state on every call;
-- the explicit `clog`, `clogf`, and `clogenabled` APIs bypass task-local logger lookup entirely;
+- the explicit `clog` and `clogenabled` APIs bypass task-local logger lookup entirely;
 - normal `ComponentLogger` reads do not acquire a configuration lock;
 - comparatively rare configuration changes pay the synchronization cost instead.
 

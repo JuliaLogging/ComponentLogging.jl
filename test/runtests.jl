@@ -99,10 +99,10 @@ end
         @test !isempty(String(take!(buf)))
     end
 
-    @testset "clogf lazy evaluation" begin
+    @testset "@clog lazy evaluation" begin
         counter = Ref(0)
         clearbuf!()
-        clogf(logger, :core, -2000) do
+        @clog logger :core -2000 begin
             counter[] += 1
             "computed"
         end
@@ -110,7 +110,7 @@ end
         @test isempty(String(take!(buf)))
 
         clearbuf!()
-        clogf(logger, :core, 2000) do
+        @clog logger :core 2000 begin
             counter[] += 1
             "computed"
         end
@@ -295,11 +295,6 @@ end
 
         ForwardLoggerTest.clog(:core, 0, "blocked")
         @test isempty(String(take!(ForwardLoggerTest.buf)))
-
-        ForwardLoggerTest.clogf(:core, 2000) do
-            "allowed"
-        end
-        @test occursin("allowed", String(take!(ForwardLoggerTest.buf)))
 
         @test ForwardLoggerTest.get_log_level(:core) === Warn
         ForwardLoggerTest.set_log_level!(:core, 0)

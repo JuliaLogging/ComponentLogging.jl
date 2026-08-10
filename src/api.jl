@@ -1,4 +1,4 @@
-## Functions: clog/clogenabled/clogf
+## Functions: clog/clogenabled
 function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
@@ -17,18 +17,6 @@ end
 
 clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
     clogenabled(logger, group, Info)
-
-@inline function clogf(f::F, logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}; _module=nothing, file=nothing, line=nothing)::Nothing where {F}
-    grp = _tokey(group)
-    lvl = LogLevel(level)
-    if Logging.shouldlog(logger, lvl, _module, grp, nothing)
-        msg = f()
-        if msg !== nothing
-            Logging.handle_message(logger, lvl, msg_to_tuple(msg), _module, grp, nothing, file, line)
-        end
-    end
-    nothing
-end
 
 ## Macros: @forward_logger/@clog and @c* shorthands
 _resolve_logger(logger::AbstractLogger) = logger
@@ -59,10 +47,6 @@ macro forward_logger(logger_ex)
 
         $(esc(:clogenabled))(group::Union{Symbol,ComponentLogging.RuleKey}) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group)
-
-        $(esc(:clogf))(f, group::Union{Symbol,ComponentLogging.RuleKey},
-            level::Union{Integer,ComponentLogging.LogLevel}; _module=nothing, file=nothing, line=nothing) =
-            ComponentLogging.clogf(f, ComponentLogging._resolve_logger($logger), group, level; _module, file, line)
 
         $(esc(:set_log_level!))(group, level::Union{Integer,ComponentLogging.LogLevel}) =
             ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, level)

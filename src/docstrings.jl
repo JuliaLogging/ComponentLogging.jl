@@ -4,7 +4,7 @@
 Hierarchical component logging built on Julia's standard `Logging` interface. This package provides:
 
 - A `ComponentLogger` with hierarchical rule keys to control log levels per component path, e.g. `(:net, :http)`.
-- Explicit functions `clog`, `clogenabled`, and `clogf`.
+- Explicit functions `clog` and `clogenabled`.
 - Explicit logging macros `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` with caller metadata.
 - `@forward_logger`, which creates module-local forwarding functions and a local `@clog`.
 - A simple `PlainLogger` sink for plain output without timestamps or standard prefixes.
@@ -124,32 +124,15 @@ clogenabled(group) -> Bool
 clogenabled
 
 """
-    clogf(f::Function, logger, group, level; _module, file, line)
-
-Like `clog`, but accepts a zero-argument function `f` that is only invoked if
-logging is enabled for the specified `group` and `level`. If `f()` returns
-`nothing`, no message is emitted. Non-tuple returns are converted to a tuple
-internally.
-
-If `@forward_logger` is already used, the following forwarding signatures are available:
-
-```julia
-clogf(f, group, level; _module, file, line)
-```
-"""
-clogf
-
-"""
     @clog logger group level msg...
 
 Macro version of `clog` that captures the caller's `Module`, `file`, and `line`
 for accurate provenance. All positional arguments are required, including at
 least one message expression. `group` and `level` may be runtime expressions.
 
-Message expressions are evaluated only after logging is enabled. They remain
-inline rather than being wrapped in the zero-argument closure used by `clogf`,
-avoiding closure capture of surrounding local variables. Unlike `clog`, caller
-metadata is captured automatically rather than supplied as keywords.
+Message expressions are evaluated only after logging is enabled and remain
+inline, avoiding closure capture of surrounding local variables. Unlike `clog`,
+caller metadata is captured automatically rather than supplied as keywords.
 
 When logging is enabled, all message expressions are evaluated from left to
 right. If the final expression evaluates to `nothing`, the log record is
@@ -194,7 +177,7 @@ Shorthand for `@clog logger group 2000 msg...`.
 """
     @forward_logger logger_expr
 
-Define forwarding methods in the current module so you can call `clog`, `clogf`,
+Define forwarding methods in the current module so you can call `clog`,
 `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level` without
 explicitly passing a logger each time. Also define a local `@clog group level
 msg...` bound to `logger_expr`.
@@ -215,9 +198,6 @@ const pkg_logger = Ref(ComponentLogger(...))
 
 clog(:core, 0, "hello")
 @clog :core 0 "hello"
-clogf(:core, 0) do
-    ("expensive ", 1 + 2)
-end
 set_log_level!(:core, 1000)
 get_log_level(:core)
 with_min_level(2000) do

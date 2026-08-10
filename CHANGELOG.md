@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [v1.0.0-beta2] - 2026-08-10
+### Removed
+- **Breaking:** Removed `clogf`; use `@clog` for lazy message evaluation.
+
 ## [v1.0.0-beta1] - 2026-08-10
 ### Added
 - `@forward_logger` now creates a local `@clog` bound to its logger expression.

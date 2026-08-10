@@ -13,7 +13,7 @@ CurrentModule = ComponentLogging
 ```julia
 clog(logger, group, level, msg...; kwargs...)
 clogenabled(logger, group, level)::Bool
-clogf(f::Function, logger, group, level)
+@clog logger group level msg...
 ```
 
 ```julia
@@ -22,9 +22,7 @@ function solve(problem, logger)
 
     clogenabled(logger, (:solver, :diagnostics)) && collect_diagnostics!(problem)
 
-    clogf(logger, (:solver, :summary), 1) do
-        "objective = $(objective_value(problem))"
-    end
+    @clog logger (:solver, :summary) 1 "objective = $(objective_value(problem))"
 end
 ```
 
@@ -69,10 +67,10 @@ clogenabled(logger, group)
 
 This also makes `clogenabled` useful as a lightweight runtime switch; see [Hierarchical Runtime Control](@ref).
 
-`clogf` provides lazy message construction. Its callback is evaluated only when the requested group/level is enabled. If the callback returns `nothing`, it emits no record.
+`@clog` provides lazy message construction and automatically captures caller metadata:
 
 ```julia
-clogf(logger, :summary, 0) do
+@clog logger :summary 0 begin
     stats = compute_expensive_stats()
     "stats = $stats"
 end
@@ -80,7 +78,7 @@ end
 
 ## Forwarding macro
 
-At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `clogenabled`, `clogf`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus a shorter local `@clog` form bound to `logger_expr`:
+At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus a shorter local `@clog` form bound to `logger_expr`:
 
 ```julia
 const logger = ComponentLogger(...)
@@ -120,9 +118,8 @@ Hierarchical tuple groups are also supported where accepted by the macro:
 
 ### Why use `@clog`?
 
-`@clog` evaluates message expressions only after logging is enabled. Unlike
-`clogf`, it keeps those expressions inline instead of wrapping them in a
-zero-argument closure, avoiding closure capture of surrounding local values.
+`@clog` evaluates message expressions only after logging is enabled and keeps
+them inline, avoiding closure capture of surrounding local values.
 
 It also automatically captures the emitting call's module, file, and line. The
 function APIs require that metadata to be supplied manually when it is needed.
@@ -147,7 +144,6 @@ This keeps the macro path suitable for hot code while retaining lazy message eva
 ```@docs
 clog
 clogenabled
-clogf
 @forward_logger
 @clog
 @cdebug

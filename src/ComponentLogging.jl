@@ -4,7 +4,7 @@ include("PlainLogger.jl")
 export PlainLogger
 
 export ComponentLogger, get_logger, set_module_logger, set_log_level!, get_log_level, with_min_level
-export clog, clogenabled, clogf
+export clog, clogenabled
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @forward_logger
 
 const RuleKey = NTuple{N,Symbol} where {N}
@@ -17,9 +17,6 @@ _tolevel(lvl::LogLevel)::LogLevel = lvl
 _tolevel(lvl::Integer)::LogLevel = LogLevel(lvl)
 _tolevel(on::Bool)::LogLevel = on ? Info : LogLevel(1)
 _tolevel(x) = throw(ArgumentError("level must be LogLevel, Integer, or Bool, got $(typeof(x))"))
-
-msg_to_tuple(x::Tuple) = x
-msg_to_tuple(x) = (x,)
 
 ## ComponentLogger
 mutable struct _LoggerState
