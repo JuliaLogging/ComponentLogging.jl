@@ -124,11 +124,6 @@ Logging.min_enabled_level(g::ComponentLogger)::LogLevel = (@atomic :acquire g.st
     level >= state.min_level && level >= _effective_level(state.rules, group) && _shouldlog(logger.sink, level, _module, group, id)
 end
 
-@inline function Logging.shouldlog(logger::ComponentLogger{PlainLogger}, level, _, group, _)
-    state = @atomic :acquire logger.state
-    level >= state.min_level && level >= _effective_level(state.rules, group)
-end
-
 @inline function _shouldlog(logger::AbstractLogger, level::LogLevel, _module, group, id)
     level >= Logging.min_enabled_level(logger) && Logging.shouldlog(logger, level, _module, group, id)
 end

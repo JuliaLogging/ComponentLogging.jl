@@ -99,9 +99,7 @@ logger = ComponentLogger(Dict(:core => 0); sink)
 clog(logger, :core, 0, "hello")
 ```
 
-Routing and presentation are intentionally separate: `ComponentLogger` decides whether a record passes, while `PlainLogger` (or any other `AbstractLogger` sink) decides how accepted records are written.
-
-When used alone with `Logging.with_logger`, `PlainLogger.min_level` controls its own filtering. When it is wrapped by `ComponentLogger`, ComponentLogging's rules perform the enabled check, so the sink's `min_level` does not participate.
+Routing and presentation are intentionally separate: `ComponentLogger` applies its component rules, while `PlainLogger` (or any other `AbstractLogger` sink) applies its own filtering and decides how accepted records are written.
 
 ## Reference
 

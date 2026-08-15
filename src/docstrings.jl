@@ -221,7 +221,7 @@ prefixes or timestamps.
 
 Intended for tests, demos, or embedding in custom sinks.
 
-When used as a `ComponentLogger` sink, `ComponentLogger` performs the enabled
-check and `PlainLogger.min_level` does not participate.
+When used as a `ComponentLogger` sink, a record must pass both the effective
+component level and `PlainLogger.min_level`.
 """
 PlainLogger

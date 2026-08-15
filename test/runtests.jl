@@ -335,6 +335,13 @@ end
     plogger = PlainLogger(stream=pbuf)
     clogger = ComponentLogger(sink=plogger)
 
+    @test Logging.min_enabled_level(plogger) === Info
+    @test Logging.shouldlog(plogger, Debug, nothing, :core, nothing)
+    with_logger(plogger) do
+        @debug "filtered by PlainLogger.min_level"
+    end
+    @test isempty(String(take!(pbuf)))
+
     clog(clogger, :__default__, 0, "plain info")
     @test !isempty(String(take!(pbuf)))
 

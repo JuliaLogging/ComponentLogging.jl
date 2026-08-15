@@ -226,7 +226,7 @@ end
 
 ## PlainLogger
 
-`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`-style prefixes. Its output looks like `print`, subject to its configured `min_level` filter. When wrapped by `ComponentLogger`, the component rules decide whether a record is enabled.
+`PlainLogger` is roughly a `Base.CoreLogging.SimpleLogger` without the `[Info:`-style prefixes. Its output looks like `print`, subject to its configured `min_level` filter. When wrapped by `ComponentLogger`, a record is enabled only when both the component rules and the sink's own filtering allow it.
 
 `PlainLogger` and `ComponentLogger` are independent. You can also `include("src/PlainLogger.jl")` to use `PlainLogger` on its own.
 

@@ -5,7 +5,7 @@
 end
 
 Logging.min_enabled_level(logger::PlainLogger) = logger.min_level
-Logging.shouldlog(logger::PlainLogger, level, _module, group, id) = level >= logger.min_level
+Logging.shouldlog(::PlainLogger, level, _module, group, id) = true
 
 function render_plain(iob, x::AbstractArray{T,N}) where {T,N}
     if N >= 2
