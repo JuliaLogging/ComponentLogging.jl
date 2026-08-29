@@ -1,7 +1,7 @@
 name = "ComponentLogging"
 uuid = "3f6ec708-df3b-46b4-8b70-ec9fa53b9f7d"
 authors = ["karei <abcdvvvv@gmail.com>"]
-version = "1.0.0-beta2"
+version = "1.0.0"
 
 [deps]
 Logging = "56ddb016-857b-54e1-b83d-db4d58db5568"

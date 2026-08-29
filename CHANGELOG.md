@@ -4,17 +4,18 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.0.0] - 2026-08-29
+This release marks the stabilization of ComponentLogging's public API and core functionality. The package is now considered feature-complete for its intended scope, and future changes will follow semantic versioning with compatibility preserved across the 1.x series.
 ### Changed
 - `PlainLogger` now follows Julia's two-stage `Logging` filter protocol: `min_enabled_level` provides the minimum-level gate, while `shouldlog` performs only second-stage filtering.
 ### Fixed
 - `ComponentLogger` no longer bypasses the sink's filtering when the sink is a `PlainLogger`.
 
-## [v1.0.0-beta2] - 2026-08-10
+## [1.0.0-beta.2] - 2026-08-10
 ### Removed
 - **Breaking:** Removed `clogf`; use `@clog` for lazy message evaluation.
 
-## [v1.0.0-beta1] - 2026-08-10
+## [1.0.0-beta.1] - 2026-08-10
 ### Added
 - `@forward_logger` now creates a local `@clog` bound to its logger expression.
 ### Changed
