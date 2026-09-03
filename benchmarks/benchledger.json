@@ -11,7 +11,7 @@
       "name": "ComponentLogging.jl",
       "description": "Benchmark history for ComponentLogging.jl",
       "url": "./data/benchledger.sqlite",
-      "sha256": "7ca24b6734f9eef87c4dfc60166e7d8c665f895ba8b7a4b2d4fea4920fa955d5",
+      "sha256": "44d6de7f77af69b83f689897a2ef32833705a25a96a819da1dd4453ff755faa0",
       "size_bytes": 729088,
       "packed_at": "2026-09-03T04:11:03.913Z",
       "metadata_preview": {
