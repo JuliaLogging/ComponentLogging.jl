@@ -147,9 +147,6 @@ jobs:
       - name: Cache Julia packages
         uses: julia-actions/cache@v2
 
-      - name: Instantiate benchmark project
-        run: julia --project=benchmark -e 'using Pkg; Pkg.instantiate()'
-
       - name: Install matching BenchLedger probe
         env:
           GH_TOKEN: ${{ github.token }}
@@ -286,16 +283,17 @@ jobs:
             exit 1
           fi
 
-      - name: Checkpoint benchmark database
+      - name: Prepare BenchLedger database and viewer
         run: |
+          set -euo pipefail
           DB="$GITHUB_WORKSPACE/.benchledger-db/$BENCH_DB_FILE"
           julia --project=benchmark -e 'using SQLite; db = SQLite.DB(ARGS[1]); SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)"); close(db)' "$DB"
           rm -f "${DB}-wal" "${DB}-shm"
 
-      - name: Install BenchLedger viewer
-        if: env.BENCH_DB_BRANCH == 'gh-pages'
-        run: |
-          set -euo pipefail
+          if [ "$BENCH_DB_BRANCH" != "gh-pages" ]; then
+            exit 0
+          fi
+
           tag="v${BENCHLEDGER_VERSION}"
           asset="BenchLedger-${BENCHLEDGER_VERSION}-dist.tar.gz"
           base_url="https://github.com/abcdvvvv/BenchLedger/releases/download/${tag}"
@@ -313,10 +311,7 @@ jobs:
           cp -a /tmp/benchledger-dist/. .benchledger-db/benchmarks/
           touch .benchledger-db/.nojekyll
 
-      - name: Generate BenchLedger manifest
-        if: env.BENCH_DB_BRANCH == 'gh-pages'
-        run: |
-          python3 - "$GITHUB_WORKSPACE/.benchledger-db/$BENCH_DB_FILE" ".benchledger-db/benchmarks/benchledger.json" "$BENCHLEDGER_VERSION" <<'PY'
+          python3 - "$DB" ".benchledger-db/benchmarks/benchledger.json" "$BENCHLEDGER_VERSION" <<'PY'
           import hashlib
           import json
           import os

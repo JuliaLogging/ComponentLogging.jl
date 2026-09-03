@@ -516,9 +516,11 @@ function make_run_context(source, code_state, hardware_environment, software_env
 end
 
 function create_v6_indexes!(db)
+    # The browser reads a complete snapshot; these indexes are retained for direct SQLite consumers.
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS code_states_code_date_index ON code_states (code_date)")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_measured_at_index ON runs (measured_at)")
-    SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_code_state_id_index ON runs (code_state_id)")
+    # runs_configuration_index already covers code_state_id as its leftmost prefix.
+    SQLite.execute(db, "DROP INDEX IF EXISTS runs_code_state_id_index")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_hardware_environment_id_index ON runs (hardware_environment_id)")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_software_environment_id_index ON runs (software_environment_id)")
     SQLite.execute(db, "CREATE INDEX IF NOT EXISTS runs_configuration_index ON runs (code_state_id, hardware_environment_id, software_environment_id, measured_at, id)")
@@ -651,25 +653,20 @@ function validate_schema_version!(db::SQLite.DB, path::AbstractString)
     validate_table_columns(db, path, "benchmark_results", ("run_id", "benchmark_key", "metric_name", "statistic", "unit", "value", "better"))
 end
 
-function open_database(path::AbstractString, context)
+function database_has_user_tables(db::SQLite.DB)
+    DBInterface.execute(db, "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' LIMIT 1") do result
+        iterate(result) !== nothing
+    end
+end
+
+function open_database(path::AbstractString)
     mkpath(dirname(path))
-    is_new_db = !isfile(path)
     db = SQLite.DB(path)
     try
         SQLite.execute(db, "PRAGMA foreign_keys=ON")
         SQLite.execute(db, "PRAGMA journal_mode=WAL")
         SQLite.execute(db, "PRAGMA synchronous=NORMAL")
-        if !is_new_db
-            schema_version = read_schema_version(db, path)
-            if schema_version == "5"
-                migrate_v5_to_v6!(db, path)
-            elseif schema_version != Benchledger_Schema_Version
-                error("Unsupported BenchLedger schema version in $(path): $(schema_version). Expected 5 or $(Benchledger_Schema_Version).")
-            end
-            validate_schema_version!(db, path)
-        end
-        init_database!(db)
-        make_metadata!(db, context)
+        database_has_user_tables(db) && validate_schema_version!(db, path)
         return db
     catch
         close(db)
@@ -788,14 +785,21 @@ function insert_metric_rows!(stmt::SQLite.Stmt, rows::AbstractVector{<:Benchmark
 end
 
 function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMetricRow}, code_state, hardware_environment, software_environment, context)
-    stmt = SQLite.Stmt(db, "INSERT INTO benchmark_results (run_id, benchmark_key, metric_name, statistic, unit, value, better) VALUES (?, ?, ?, ?, ?, ?, ?)")
+    validated_rows = validate_metric_rows(rows)
     SQLite.execute(db, "BEGIN IMMEDIATE TRANSACTION")
     try
+        init_database!(db)
+        make_metadata!(db, context)
         persist_labeled_entity!(db, "code_states", code_state.id, code_state.identity, code_state.metadata, code_state.label; code_date=code_state.code_date)
         persist_labeled_entity!(db, "hardware_environments", hardware_environment.id, hardware_environment.identity, hardware_environment.metadata, hardware_environment.label)
         persist_labeled_entity!(db, "software_environments", software_environment.id, software_environment.identity, software_environment.metadata, software_environment.label)
         insert_run!(db, context)
-        count = insert_metric_rows!(stmt, validate_metric_rows(rows), context.id)
+        stmt = SQLite.Stmt(db, "INSERT INTO benchmark_results (run_id, benchmark_key, metric_name, statistic, unit, value, better) VALUES (?, ?, ?, ?, ?, ?, ?)")
+        count = try
+            insert_metric_rows!(stmt, validated_rows, context.id)
+        finally
+            DBInterface.close!(stmt)
+        end
         SQLite.execute(db, "COMMIT")
         return count
     catch err
@@ -804,8 +808,6 @@ function persist_metric_rows!(db::SQLite.DB, rows::AbstractVector{<:BenchmarkMet
         catch
         end
         rethrow(err)
-    finally
-        DBInterface.close!(stmt)
     end
 end
 
@@ -816,8 +818,10 @@ probe = collect_probe()
 hardware_environment = make_hardware_environment(probe)
 software_environment = make_software_environment(probe)
 context = make_run_context(source, code_state, hardware_environment, software_environment, measured_at, probe)
-db = open_database(Results_DB_Path, context)
+db = open_database(Results_DB_Path)
 count = persist_metric_rows!(db, metric_rows(results), code_state, hardware_environment, software_environment, context)
+SQLite.execute(db, "PRAGMA wal_checkpoint(TRUNCATE)")
+SQLite.execute(db, "PRAGMA journal_mode=DELETE")
 close(db)
 
 println("Wrote $count benchmark rows to $(Results_DB_Path)")
