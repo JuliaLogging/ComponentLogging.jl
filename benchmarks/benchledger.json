@@ -1,6 +1,6 @@
 {
   "benchledger_web_version": "0.8.0",
-  "generated_at": "2026-09-03T04:11:03.913Z",
+  "generated_at": "2026-09-03T04:34:40.371Z",
   "site": {
     "title": "ComponentLogging.jl BenchLedger",
     "description": "Benchmark history for ComponentLogging.jl"
@@ -11,9 +11,9 @@
       "name": "ComponentLogging.jl",
       "description": "Benchmark history for ComponentLogging.jl",
       "url": "./data/benchledger.sqlite",
-      "sha256": "44d6de7f77af69b83f689897a2ef32833705a25a96a819da1dd4453ff755faa0",
-      "size_bytes": 729088,
-      "packed_at": "2026-09-03T04:11:03.913Z",
+      "sha256": "723372916988e77125971755998cb969646d5b50bf62f740044c2220d409cd51",
+      "size_bytes": 741376,
+      "packed_at": "2026-09-03T04:34:40.371Z",
       "metadata_preview": {
         "name": "ComponentLogging.jl",
         "project_url": "https://github.com/JuliaLogging/ComponentLogging.jl",
