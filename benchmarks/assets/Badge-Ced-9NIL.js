@@ -1,0 +1,1 @@
+import{t as e}from"./cn-CLdESmj-.js";import{n as t}from"./vendor-C5lLg0xK.js";import{t as n}from"./semanticTone-CX3i2alp.js";var r=t();function i(t){let i=t.tone??`neutral`;return(0,r.jsx)(`span`,{className:e(n(i),t.className),children:t.children})}export{i as t};

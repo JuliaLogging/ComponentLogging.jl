@@ -1,0 +1,1 @@
+import{n as e}from"./vendor-C5lLg0xK.js";import{c as t,p as n}from"./Menu-C6M5W5gG.js";var r=e();function i(e={}){let i=t(e);return(0,r.jsx)(n,{value:i,children:e.children})}export{i as t};
