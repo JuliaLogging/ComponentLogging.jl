@@ -1,21 +1,21 @@
 # Changelog
-All notable changes to this project will be documented in this file.
 
-The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+## [1.0.1]
+### Fixed
+- Add the missing forwarding method for `set_log_level!`.
 
-## [1.0.0] - 2026-08-29
+## [1.0.0]
 This release marks the stabilization of ComponentLogging's public API and core functionality. The package is now considered feature-complete for its intended scope, and future changes will follow semantic versioning with compatibility preserved across the 1.x series.
 ### Changed
 - `PlainLogger` now follows Julia's two-stage `Logging` filter protocol: `min_enabled_level` provides the minimum-level gate, while `shouldlog` performs only second-stage filtering.
 ### Fixed
 - `ComponentLogger` no longer bypasses the sink's filtering when the sink is a `PlainLogger`.
 
-## [1.0.0-beta.2] - 2026-08-10
+## [1.0.0-beta.2]
 ### Removed
 - **Breaking:** Removed `clogf`; use `@clog` for lazy message evaluation.
 
-## [1.0.0-beta.1] - 2026-08-10
+## [1.0.0-beta.1]
 ### Added
 - `@forward_logger` now creates a local `@clog` bound to its logger expression.
 ### Changed
@@ -25,17 +25,17 @@ This release marks the stabilization of ComponentLogging's public API and core f
 - **Breaking:** Removed the module logger registry, `get_logger`, `set_module_logger`, and `@bind_logger`.
 - **Breaking:** Removed the `@clogenabled` and `@clogf` macros; use `clogenabled` and `clogf` instead.
 
-## [0.4.0] - 2026-08-09
+## [0.4.0]
 ### Added
 - `@forward_logger` now generates a `get_log_level(group)` forwarding helper.
 ### Changed
 - **Breaking:** `@forward_logger` now generates `set_log_level!` instead of `set_log_level` for log-level updates.
 
-## [0.3.1] - 2026-08-09
+## [0.3.1]
 ### Added
 - `get_log_level(logger, group)` for querying a component group's effective log level.
 
-## [0.3.0] - 2026-07-30
+## [0.3.0]
 ### Changed
 - Improved thread safety for component log-level updates and module logger bindings, allowing logging configuration to be changed safely in concurrent applications.
 - Significantly reduced the overhead of disabled log calls, especially when using the explicit `clog`, `clogf`, and `clogenabled` function APIs.
@@ -48,7 +48,7 @@ This release marks the stabilization of ComponentLogging's public API and core f
 - Fixed unnecessary allocations and substantial performance regressions introduced in filtered logging paths.
 - Fixed potential data races when log-level rules or module logger bindings are updated concurrently.
 
-## [0.2.0] - 2026-07-11
+## [0.2.0]
 ### Added
 - Added thread-safe updates for component-specific log levels.
 - Added task-local minimum-level overrides with `with_min_level`, so temporary changes no longer affect unrelated concurrent tasks.
@@ -63,14 +63,14 @@ This release marks the stabilization of ComponentLogging's public API and core f
 ### Fixed
 - Fixed data races in concurrent rule updates and minimum-level checks.
 
-## [0.1.6] - 2026-01-19
+## [0.1.6]
 ### Changed
 - PlainLogger now uses keyword defaults via `@kwdef`.
 
 ### Removed
 - `PlainLogger(min_level::LogLevel)` positional constructor; use keyword arguments instead (e.g. `PlainLogger(min_level=Debug)`).
 
-## [0.1.5] - 2026-01-15
+## [0.1.5]
 ### Added
 - `@forward_logger` now generates a non-bang `set_log_level(...)` forwarding helper (internally calling `set_log_level!`).
 
@@ -85,7 +85,7 @@ This release marks the stabilization of ComponentLogging's public API and core f
 ### Removed
 - `@forward_logger` no longer forwards `set_log_level!` by default (use `set_log_level` from the forwarding set).
 
-## [0.1.4] - 2026-01-15
+## [0.1.4]
 ### Added
 - `@forward_logger` to generate module-local forwarding methods for a logger (or `Ref{<:AbstractLogger}`).
 - `set_log_level!(logger, group, on::Bool)` convenience switch.
@@ -99,7 +99,7 @@ This release marks the stabilization of ComponentLogging's public API and core f
 ### Removed
 - Removed overloads without an explicit `group` (`clog(logger, level, ...)`, `clogenabled(logger, level)`).
 
-## [0.1.3] - 2026-01-14
+## [0.1.3]
 ### Fixed
 - `@bind_logger`: fix sink keyword handling, remove `min=` handling, and use `mod=` keyword.
 
@@ -109,7 +109,7 @@ This release marks the stabilization of ComponentLogging's public API and core f
 - CI: test against Julia `lts` and `1`.
 - Compat: relax Julia requirement to `julia = "1"`.
 
-## [0.1.2] - 2025-10-13
+## [0.1.2]
 ### Changed
 - PlainLogger: reworked rendering for simpler, more predictable output and better performance.
   - Use `render_plain` helpers: arrays with `N >= 2` are shown with `show(MIME"text/plain")` for readable matrices; scalars and 1-D arrays print directly.
@@ -121,15 +121,19 @@ This release marks the stabilization of ComponentLogging's public API and core f
 ### Fixed
 - Ensure `handle_message` always returns `nothing` for type stability.
 
-## [0.1.1] - 2025-10-07
+## [0.1.1]
 ### Changed
 - Documentation: general improvements and clarifications.
 
-## [0.1.0] - 2025-09-25
+## [0.1.0]
 ### Added
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0...v1.0.1
+[1.0.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0-beta.2...v1.0.0
+[1.0.0-beta.2]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0-beta.1...v1.0.0-beta.2
+[1.0.0-beta.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.4.0...v1.0.0-beta.1
 [0.4.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.2.0...v0.3.0
@@ -140,3 +144,4 @@ This release marks the stabilization of ComponentLogging's public API and core f
 [0.1.3]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v0.1.0...v0.1.1
+[0.1.0]: https://github.com/JuliaLogging/ComponentLogging.jl/releases/tag/v0.1.0

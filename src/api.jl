@@ -36,28 +36,28 @@ macro forward_logger(logger_ex)
     end
     logger = esc(logger_ex)
     return quote
-        $(esc(:clog))(group::Union{Symbol,ComponentLogging.RuleKey}, level::Union{Integer,ComponentLogging.LogLevel}, message...; kwargs...) =
+        $(esc(:clog))(group, level, message...; kwargs...) =
             ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, level, message...; kwargs...)
 
-        $(esc(:clog))(group::Union{Symbol,ComponentLogging.RuleKey}, message...; kwargs...) =
+        $(esc(:clog))(group, message...; kwargs...) =
             ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, message...; kwargs...)
 
-        $(esc(:clogenabled))(group::Union{Symbol,ComponentLogging.RuleKey}, level::Union{Integer,ComponentLogging.LogLevel}) =
+        $(esc(:clogenabled))(group, level) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group, level)
 
-        $(esc(:clogenabled))(group::Union{Symbol,ComponentLogging.RuleKey}) =
+        $(esc(:clogenabled))(group) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group)
 
-        $(esc(:set_log_level!))(group, level::Union{Integer,ComponentLogging.LogLevel}) =
+        $(esc(:set_log_level!))(group, level) =
             ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, level)
 
-        $(esc(:set_log_level!))(group, on::Bool) =
-            ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, on)
+        $(esc(:set_log_level!))(group, level, args...) =
+            ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, level, args...)
 
-        $(esc(:get_log_level))(group::Union{Symbol,ComponentLogging.RuleKey}) =
+        $(esc(:get_log_level))(group) =
             ComponentLogging.get_log_level(ComponentLogging._resolve_logger($logger), group)
 
-        $(esc(:with_min_level))(f, level::Union{Integer,ComponentLogging.LogLevel}) =
+        $(esc(:with_min_level))(f, level) =
             ComponentLogging.with_min_level(f, ComponentLogging._resolve_logger($logger), level)
 
         Core.eval($(QuoteNode(__module__)), $(QuoteNode(definition)))

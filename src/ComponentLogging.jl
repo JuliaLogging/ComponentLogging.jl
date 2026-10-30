@@ -66,11 +66,9 @@ function set_log_level!(logger::ComponentLogger, group, lvl, args...)
         state = @atomic :acquire logger.state
         rules = copy(state.rules)
         rules[_tokey(group)] = _tolevel(lvl)
-
         @inbounds for i in 1:2:length(args)
-            rules[_tokey(args[i])] = _tolevel(args[i + 1])
+            rules[_tokey(args[i])] = _tolevel(args[i+1])
         end
-
         state = _LoggerState(rules, minimum(values(rules)))
         @atomic :release logger.state = state
     end
