@@ -1,11 +1,12 @@
 ```@meta
 CurrentModule = ComponentLogging
 ```
+
 # Logging
 
 ## Functions
 
-!!! info 
+!!! info
     These functions take a logger explicitly, so they do not need to discover logging state from the current task or consult the module registry. This makes them the preferred interface for hot paths, library internals, and execution contexts that need their own logger.
 
 ## Explicit logger passing
@@ -144,6 +145,10 @@ This keeps the macro path suitable for hot code while retaining lazy message eva
 
 ```@docs
 clog
+cdebug
+cinfo
+cwarn
+cerror
 clogenabled
 @forward_logger
 @clog

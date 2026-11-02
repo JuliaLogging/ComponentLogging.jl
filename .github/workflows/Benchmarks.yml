@@ -44,7 +44,6 @@ on:
         type: string
   push:
     branches: [master]
-    tags: ["v*"]
 
 permissions:
   contents: write
