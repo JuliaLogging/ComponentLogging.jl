@@ -1,42 +1,80 @@
 # Changelog
 
+## [1.1.0]
+
+### Added
+
+- Add explicit logger functions `cdebug`, `cinfo`, `cwarn`, and `cerror` for emitting at fixed levels.
+- `@forward_logger` now also creates local `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros.
+
+### Changed
+
+- `PlainLogger` now renders caller source metadata in a subdued gray color.
+
+### Removed
+
+- Remove the `clog(logger, group, message...)` overload that implicitly used `Info`; use `cinfo(logger, group, message...)` or pass the level explicitly.
+
 ## [1.0.1]
+
 ### Fixed
+
 - Add the missing forwarding method for `set_log_level!`.
 
 ## [1.0.0]
+
 This release marks the stabilization of ComponentLogging's public API and core functionality. The package is now considered feature-complete for its intended scope, and future changes will follow semantic versioning with compatibility preserved across the 1.x series.
+
 ### Changed
+
 - `PlainLogger` now follows Julia's two-stage `Logging` filter protocol: `min_enabled_level` provides the minimum-level gate, while `shouldlog` performs only second-stage filtering.
+
 ### Fixed
+
 - `ComponentLogger` no longer bypasses the sink's filtering when the sink is a `PlainLogger`.
 
 ## [1.0.0-beta.2]
+
 ### Removed
+
 - **Breaking:** Removed `clogf`; use `@clog` for lazy message evaluation.
 
 ## [1.0.0-beta.1]
+
 ### Added
+
 - `@forward_logger` now creates a local `@clog` bound to its logger expression.
+
 ### Changed
+
 - **Breaking:** `@clog` and the `@c*` shorthands now require an explicit logger argument.
 - **Breaking:** `@clog` now discards a record when its final message expression evaluates to `nothing`.
+
 ### Removed
+
 - **Breaking:** Removed the module logger registry, `get_logger`, `set_module_logger`, and `@bind_logger`.
 - **Breaking:** Removed the `@clogenabled` and `@clogf` macros; use `clogenabled` and `clogf` instead.
 
 ## [0.4.0]
+
 ### Added
+
 - `@forward_logger` now generates a `get_log_level(group)` forwarding helper.
+
 ### Changed
+
 - **Breaking:** `@forward_logger` now generates `set_log_level!` instead of `set_log_level` for log-level updates.
 
 ## [0.3.1]
+
 ### Added
+
 - `get_log_level(logger, group)` for querying a component group's effective log level.
 
 ## [0.3.0]
+
 ### Changed
+
 - Improved thread safety for component log-level updates and module logger bindings, allowing logging configuration to be changed safely in concurrent applications.
 - Significantly reduced the overhead of disabled log calls, especially when using the explicit `clog`, `clogf`, and `clogenabled` function APIs.
 - Improved module logger lookup performance.
@@ -44,73 +82,96 @@ This release marks the stabilization of ComponentLogging's public API and core f
 - Changed `with_min_level` from a task-local override to a temporary global minimum-level override for the target `ComponentLogger`. The temporary level applies to all tasks and threads using that logger for the duration of the callback and is restored afterward.
 
 ### Fixed
+
 - `ComponentLogger` now consistently respects the configured sink logger's own filtering rules when deciding whether a message is enabled.
 - Fixed unnecessary allocations and substantial performance regressions introduced in filtered logging paths.
 - Fixed potential data races when log-level rules or module logger bindings are updated concurrently.
 
 ## [0.2.0]
+
 ### Added
+
 - Added thread-safe updates for component-specific log levels.
 - Added task-local minimum-level overrides with `with_min_level`, so temporary changes no longer affect unrelated concurrent tasks.
 - Added stable log record IDs for `@clog` and `@clogf`.
 
 ### Changed
+
 - Improved `ComponentLogger` for safer and faster use in multithreaded applications.
 - Updated `@clogf` to reject invalid argument counts instead of silently ignoring extra arguments.
 - Removed unused group-less `clog` and `clogenabled` overloads.
 - Updated documentation and tests for the revised concurrency behavior.
 
 ### Fixed
+
 - Fixed data races in concurrent rule updates and minimum-level checks.
 
 ## [0.1.6]
+
 ### Changed
+
 - PlainLogger now uses keyword defaults via `@kwdef`.
 
 ### Removed
+
 - `PlainLogger(min_level::LogLevel)` positional constructor; use keyword arguments instead (e.g. `PlainLogger(min_level=Debug)`).
 
 ## [0.1.5]
+
 ### Added
+
 - `@forward_logger` now generates a non-bang `set_log_level(...)` forwarding helper (internally calling `set_log_level!`).
 
 ### Changed
+
 - Function APIs: `_module` keyword now defaults to `nothing` again (avoids capturing the defining module as a default).
 - Docs: move `@forward_logger` documentation to the function-first page and clarify macro-first vs function-first usage.
 - Docs: update `@bind_logger` example to use `sink=...` keyword form.
 
 ### Fixed
+
 - README: minimal example now runs as written.
 
 ### Removed
+
 - `@forward_logger` no longer forwards `set_log_level!` by default (use `set_log_level` from the forwarding set).
 
 ## [0.1.4]
+
 ### Added
+
 - `@forward_logger` to generate module-local forwarding methods for a logger (or `Ref{<:AbstractLogger}`).
 - `set_log_level!(logger, group, on::Bool)` convenience switch.
 
 ### Changed
+
 - `@clog` now supports the no-group form `@clog level msg...`.
 
 ### Fixed
+
 - `clog` now forwards `id` to `Logging.handle_message`.
 
 ### Removed
+
 - Removed overloads without an explicit `group` (`clog(logger, level, ...)`, `clogenabled(logger, level)`).
 
 ## [0.1.3]
+
 ### Fixed
+
 - `@bind_logger`: fix sink keyword handling, remove `min=` handling, and use `mod=` keyword.
 
 ### Changed
+
 - Documentation: update `@bind_logger` docs and add a usage example.
 - Tests: add `@bind_logger` regression coverage.
 - CI: test against Julia `lts` and `1`.
 - Compat: relax Julia requirement to `julia = "1"`.
 
 ## [0.1.2]
+
 ### Changed
+
 - PlainLogger: reworked rendering for simpler, more predictable output and better performance.
   - Use `render_plain` helpers: arrays with `N >= 2` are shown with `show(MIME"text/plain")` for readable matrices; scalars and 1-D arrays print directly.
   - Remove color styling and rely on plain printing for consistent logs across environments.
@@ -119,17 +180,23 @@ This release marks the stabilization of ComponentLogging's public API and core f
   - Add `@nospecialize kwargs` to avoid excessive specialization and reduce latency.
 
 ### Fixed
+
 - Ensure `handle_message` always returns `nothing` for type stability.
 
 ## [0.1.1]
+
 ### Changed
+
 - Documentation: general improvements and clarifications.
 
 ## [0.1.0]
+
 ### Added
+
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.1...v1.1.0
 [1.0.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0-beta.2...v1.0.0
 [1.0.0-beta.2]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.0-beta.1...v1.0.0-beta.2

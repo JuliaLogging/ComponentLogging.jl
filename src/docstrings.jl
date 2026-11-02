@@ -108,6 +108,19 @@ clog(group, msg...; kwargs...)
 clog
 
 """
+    cdebug(logger, group, msg...; kwargs...)
+    cinfo(logger, group, msg...; kwargs...)
+    cwarn(logger, group, msg...; kwargs...)
+    cerror(logger, group, msg...; kwargs...)
+
+Emit a message through `logger` at `Debug`, `Info`, `Warn`, or `Error` level,
+respectively. These function forms evaluate message arguments before entering
+the logging function; use the corresponding `@c*` macro when lazy evaluation
+or caller metadata is required.
+"""
+cdebug, cinfo, cwarn, cerror
+
+"""
     clogenabled(logger, group, level) -> Bool
     clogenabled(logger, group) -> Bool
 
@@ -180,7 +193,8 @@ Shorthand for `@clog logger group 2000 msg...`.
 Define forwarding methods in the current module so you can call `clog`,
 `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level` without
 explicitly passing a logger each time. Also define a local `@clog group level
-msg...` bound to `logger_expr`.
+msg...` and local `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` shorthands bound
+to `logger_expr`.
 
 `logger_expr` may be an `AbstractLogger`, a `Ref` holding one, or an expression
 such as `STATE[].logger`. Its names are bound in the module that invokes
@@ -198,6 +212,7 @@ const pkg_logger = Ref(ComponentLogger(...))
 
 clog(:core, 0, "hello")
 @clog :core 0 "hello"
+@cinfo :core "hello"
 set_log_level!(:core, 1000)
 get_log_level(:core)
 with_min_level(2000) do

@@ -78,7 +78,7 @@ end
 
 ## Forwarding macro
 
-At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus a shorter local `@clog` form bound to `logger_expr`:
+At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus local `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` forms bound to `logger_expr`:
 
 ```julia
 const logger = ComponentLogger(...)
@@ -86,6 +86,7 @@ const logger = ComponentLogger(...)
 
 clog(:core, 0, "hello")
 @clog :core 0 "hello"
+@cinfo :core "hello"
 
 clogenabled(:core)
 set_log_level!(:core, true)

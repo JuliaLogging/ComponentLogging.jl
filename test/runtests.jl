@@ -22,6 +22,14 @@ function macro_source_line()
     @clog :__default__ 0 "forwarded metadata"
     return expected_line
 end
+
+function shorthand_macros()
+    @cdebug :core "forwarded debug"
+    @cinfo :__default__ "forwarded info"
+    @cwarn :core "forwarded warn"
+    @cerror :core "forwarded error"
+    nothing
+end
 end
 
 module ForwardLoggerFieldTest
@@ -84,6 +92,7 @@ end
 
     @testset "function API" begin
         @test_throws MethodError clog(logger, 0, "missing group")
+        @test_throws MethodError clog(logger, :core, "implicit level")
         @test_throws MethodError clogenabled(logger, 0)
 
         clearbuf!()
@@ -97,6 +106,17 @@ end
         clearbuf!()
         clog(logger, :__default__, 0, "info default")
         @test !isempty(String(take!(buf)))
+
+        clearbuf!()
+        cinfo(logger, :__default__, "info alias")
+        cwarn(logger, :core, "warn alias")
+        cerror(logger, :core, "error alias")
+        cdebug(logger, :core, "debug alias")
+        alias_output = String(take!(buf))
+        @test occursin("info alias", alias_output)
+        @test occursin("warn alias", alias_output)
+        @test occursin("error alias", alias_output)
+        @test !occursin("debug alias", alias_output)
     end
 
     @testset "@clog lazy evaluation" begin
@@ -162,7 +182,7 @@ end
     end
 
     @testset "rule snapshots" begin
-        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
+        local logger = ComponentLogger(Dict{Symbol, LogLevel}(); sink)
         @test Logging.min_enabled_level(logger) === Info
         @test (@atomic :acquire logger.state).min_level === Info
 
@@ -234,7 +254,7 @@ end
     end
 
     @testset "concurrent rule access" begin
-        local logger = ComponentLogger(Dict{Symbol,LogLevel}(); sink)
+        local logger = ComponentLogger(Dict{Symbol, LogLevel}(); sink)
         groups = [Symbol("group", string(i)) for i in 1:32]
 
         @sync for group in groups
@@ -304,6 +324,13 @@ end
 
         @test ForwardLoggerTest.macro_side_effects() == [1, 2]
         @test isempty(String(take!(ForwardLoggerTest.buf)))
+
+        ForwardLoggerTest.shorthand_macros()
+        shorthand_output = String(take!(ForwardLoggerTest.buf))
+        @test !occursin("forwarded debug", shorthand_output)
+        @test occursin("forwarded info", shorthand_output)
+        @test occursin("forwarded warn", shorthand_output)
+        @test occursin("forwarded error", shorthand_output)
 
         source_line = ForwardLoggerTest.macro_source_line()
         source_output = String(take!(ForwardLoggerTest.buf))

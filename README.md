@@ -4,7 +4,7 @@
 [![Build Status](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml/badge.svg?branch=master)](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/CI.yml?query=branch%3Amaster)
 [![Benchmarks](https://github.com/JuliaLogging/ComponentLogging.jl/actions/workflows/Benchmarks.yml/badge.svg)](https://julialogging.github.io/ComponentLogging.jl/benchmarks/)
 
-ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around *explicit component loggers* and *hierarchical log-level control*.
+ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around _explicit component loggers_ and _hierarchical log-level control_.
 
 Unlike Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
 
@@ -54,9 +54,9 @@ ComponentLogger
 
 **What the rules mean**
 
-* **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
-* **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
-* Define a catch-all like `:__default__ => 0` to control unmatched groups.
+- **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
+- **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
+- Define a catch-all like `:__default__ => 0` to control unmatched groups.
 
 ### Hierarchical runtime switches
 
@@ -103,13 +103,15 @@ clog(logger,        group, level, msg...; kwargs...)
 ```
 
 **Arguments:**
-* `logger::AbstractLogger` — any logger instance.
-Typically you pass a `ComponentLogger` configured with per-group rules and a sink (e.g. `PlainLogger`). Many codebases also define forwarding helpers to avoid threading the logger explicitly (see below).
-* `group::Union{Symbol,NTuple{N,Symbol}}` — a `Symbol` or a tuple of symbols, e.g. `:core` or `(:net, :http)`.
-* `level::Union{Integer,LogLevel}` — prefer integers (no need to import `Logging`). We immediately convert with `LogLevel(level)`.
-  * Mapping (integers first): `-1000 (Debug)`, `0 (Info)`, `1000 (Warn)`, `2000 (Error)`.
+
+- `logger::AbstractLogger` — any logger instance.
+  Typically you pass a `ComponentLogger` configured with per-group rules and a sink (e.g. `PlainLogger`). Many codebases also define forwarding helpers to avoid threading the logger explicitly (see below).
+- `group::Union{Symbol,NTuple{N,Symbol}}` — a `Symbol` or a tuple of symbols, e.g. `:core` or `(:net, :http)`.
+- `level::Union{Integer,LogLevel}` — prefer integers (no need to import `Logging`). We immediately convert with `LogLevel(level)`.
+  - Mapping (integers first): `-1000 (Debug)`, `0 (Info)`, `1000 (Warn)`, `2000 (Error)`.
 
 **Example:**
+
 ```julia
 clog(clogger, :core,  0, "starting job"; jobid=42)   # 0 = Info
 clog(clogger, :io, 1000, "retrying I/O"; attempt=3)  # 1000 = Warn
@@ -120,6 +122,7 @@ clog(clogger, :io, 1000, "retrying I/O"; attempt=3)  # 1000 = Warn
 Checks whether records at `level` are enabled for `group`.
 
 **Example:**
+
 ```julia
 if clogenabled(clogger, :core, 1000)  # guard expensive work
     stats = compute_expensive_stats()
@@ -159,8 +162,7 @@ end
 ```
 
 This creates module-local forwarding methods for `clog`, `clogenabled`,
-`set_log_level!`, `get_log_level`, and `with_min_level`, plus a local
-`@clog` that uses `clogger`. The logger expression is bound where
+`set_log_level!`, `get_log_level`, and `with_min_level`, plus local `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros that use `clogger`. The logger expression is bound where
 `@forward_logger` is declared, including when the generated macro is imported
 by another module.
 
@@ -181,7 +183,9 @@ function compute_vector_sum(n)
 end
 compute_vector_sum(3);
 ```
+
 Output:
+
 ```julia
 Processing a 3-element vector
 Done.
@@ -240,7 +244,9 @@ with_logger(logger) do
     @info "Hello, Julia!"
 end
 ```
+
 Output:
+
 ```julia
 Hello, Julia!
 @ README.md:183
@@ -253,7 +259,9 @@ with_logger(logger) do
     @warn rand(1:9, 3, 3)
 end
 ```
+
 Output:
+
 ```julia
 3×3 Matrix{Int64}:
  8  5  6
@@ -268,9 +276,9 @@ ComponentLogging is continuously benchmarked over time. Current and historical p
 
 ## Similar Packages
 
-[**Memento.jl**][1] is a *flexible, hierarchical* logging framework that brings its own ecosystem of loggers, handlers, formatters, records, and IO backends. Loggers are named (e.g., `"Foo.bar"`), form a hierarchy with propagation to a root logger, and are configured via `config!`, `setlevel!`, and by attaching handlers (file, custom formatters, etc.).
+[**Memento.jl**][1] is a _flexible, hierarchical_ logging framework that brings its own ecosystem of loggers, handlers, formatters, records, and IO backends. Loggers are named (e.g., `"Foo.bar"`), form a hierarchy with propagation to a root logger, and are configured via `config!`, `setlevel!`, and by attaching handlers (file, custom formatters, etc.).
 
-[**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers with *hierarchically-related objects* (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree. 
+[**HierarchicalLogging.jl**][2] defines a `Base.Logging`-compatible `HierarchicalLogger` that associates loggers with _hierarchically-related objects_ (e.g., `module → submodule`). Each node has a `LogLevel` that can be set with `min_enabled_level!`, which also recursively updates children; you can attach different underlying loggers (e.g., `ConsoleLogger`) to different parts of the tree.
 
 [**ComponentLogging.jl**][3] takes a different approach: it is a lightweight, performance-oriented layer over `Base.CoreLogging` built around explicit component loggers and hierarchical group rules. It routes accepted records to any `AbstractLogger` sink, keeps filtered paths extremely cheap, and also exposes the same hierarchy as a lightweight runtime control plane through `clogenabled` and Boolean level switches.
 

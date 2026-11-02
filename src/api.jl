@@ -1,21 +1,30 @@
 ## Functions: clog/clogenabled
-function clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...)::Nothing
+function clog(logger::AbstractLogger, group::Union{Symbol, RuleKey}, level::Union{Integer, LogLevel}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...)::Nothing
     grp = _tokey(group)
     lvl = LogLevel(level)
     Logging.shouldlog(logger, lvl, _module, grp, id) && Logging.handle_message(logger, lvl, message, _module, grp, id, file, line; kwargs...)
     nothing
 end
 
-clog(logger::AbstractLogger, group::Union{Symbol,RuleKey}, message...; _module=nothing, id=nothing, file=nothing, line=nothing, kwargs...) =
-    clog(logger, group, Info, message...; _module, id, file, line, kwargs...)
+cdebug(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
+    clog(logger, group, -2000, message...; kwargs...)
 
-function clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}, level::Union{Integer,LogLevel})::Bool
+cinfo(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
+    clog(logger, group, 0, message...; kwargs...)
+
+cwarn(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
+    clog(logger, group, 1000, message...; kwargs...)
+
+cerror(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
+    clog(logger, group, 2000, message...; kwargs...)
+
+function clogenabled(logger::AbstractLogger, group::Union{Symbol, RuleKey}, level::Union{Integer, LogLevel})::Bool
     grp = _tokey(group)
     lvl = LogLevel(level)
     return Logging.shouldlog(logger, lvl, nothing, grp, nothing)
 end
 
-clogenabled(logger::AbstractLogger, group::Union{Symbol,RuleKey}) =
+clogenabled(logger::AbstractLogger, group::Union{Symbol, RuleKey}) =
     clogenabled(logger, group, Info)
 
 ## Macros: @forward_logger/@clog and @c* shorthands
@@ -32,6 +41,18 @@ macro forward_logger(logger_ex)
     definition = quote
         macro clog(group_ex, level_ex, msg_ex...)
             $helper($(QuoteNode(bound_logger)), group_ex, level_ex, msg_ex, __source__, __module__)
+        end
+        macro cdebug(group_ex, msg_ex...)
+            $helper($(QuoteNode(bound_logger)), group_ex, -2000, msg_ex, __source__, __module__)
+        end
+        macro cinfo(group_ex, msg_ex...)
+            $helper($(QuoteNode(bound_logger)), group_ex, 0, msg_ex, __source__, __module__)
+        end
+        macro cwarn(group_ex, msg_ex...)
+            $helper($(QuoteNode(bound_logger)), group_ex, 1000, msg_ex, __source__, __module__)
+        end
+        macro cerror(group_ex, msg_ex...)
+            $helper($(QuoteNode(bound_logger)), group_ex, 2000, msg_ex, __source__, __module__)
         end
     end
     logger = esc(logger_ex)

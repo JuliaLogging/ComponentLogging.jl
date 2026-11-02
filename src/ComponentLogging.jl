@@ -4,14 +4,14 @@ include("PlainLogger.jl")
 export PlainLogger
 
 export ComponentLogger, get_logger, set_module_logger, set_log_level!, get_log_level, with_min_level
-export clog, clogenabled
+export clog, cdebug, cinfo, cwarn, cerror, clogenabled
 export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @forward_logger
 
-const RuleKey = NTuple{N,Symbol} where {N}
+const RuleKey = NTuple{N, Symbol} where {N}
 const Default_Sym = :__default__
 
-_tokey(k::Symbol)::NTuple{1,Symbol} = (k,)
-_tokey(k::NTuple{N,Symbol}) where {N} = k
+_tokey(k::Symbol)::NTuple{1, Symbol} = (k,)
+_tokey(k::NTuple{N, Symbol}) where {N} = k
 _tokey(x) = throw(ArgumentError("group must be Symbol or $RuleKey, got $(typeof(x))"))
 _tolevel(lvl::LogLevel)::LogLevel = lvl
 _tolevel(lvl::Integer)::LogLevel = LogLevel(lvl)
@@ -20,7 +20,7 @@ _tolevel(x) = throw(ArgumentError("level must be LogLevel, Integer, or Bool, got
 
 ## ComponentLogger
 mutable struct _LoggerState
-    const rules::Dict{RuleKey,LogLevel}
+    const rules::Dict{RuleKey, LogLevel}
     const min_level::LogLevel
 end
 
@@ -30,14 +30,14 @@ mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
     lock::ReentrantLock
 end
 
-function ComponentLogger(rules::Dict{RuleKey,LogLevel}=Dict{RuleKey,LogLevel}((Default_Sym,) => Info); sink=ConsoleLogger(Debug))
+function ComponentLogger(rules::Dict{RuleKey, LogLevel}=Dict{RuleKey, LogLevel}((Default_Sym,) => Info); sink=ConsoleLogger(Debug))
     rules = copy(rules)
     state = _LoggerState(rules, minimum(values(rules)))
     return ComponentLogger(state, sink, ReentrantLock())
 end
 
 function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
-    rules = sizehint!(Dict{RuleKey,LogLevel}((Default_Sym,) => Info), length(nonstdrules) + 1)
+    rules = sizehint!(Dict{RuleKey, LogLevel}((Default_Sym,) => Info), length(nonstdrules) + 1)
     for (k, v) in nonstdrules
         if !(v isa LogLevel || v isa Integer)
             throw(ArgumentError("the value of dict should be either LogLevel or Integer, got $(typeof(v))"))
@@ -47,7 +47,7 @@ function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
     return ComponentLogger(rules; sink)
 end
 
-function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer,LogLevel,Bool})
+function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer, LogLevel, Bool})
     grp = _tokey(group)
     lvl = _tolevel(lvl)
     @lock logger.lock begin
@@ -75,12 +75,12 @@ function set_log_level!(logger::ComponentLogger, group, lvl, args...)
     return logger
 end
 
-function get_log_level(logger::ComponentLogger, group::Union{Symbol,RuleKey})::LogLevel
+function get_log_level(logger::ComponentLogger, group::Union{Symbol, RuleKey})::LogLevel
     state = @atomic :acquire logger.state
     return _effective_level(state.rules, group)
 end
 
-function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLevel}) where {F}
+function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer, LogLevel}) where {F}
     lvl = LogLevel(lvl)
     lock(logger.lock)
     try
@@ -96,12 +96,12 @@ function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer,LogLev
     end
 end
 
-@inline function _effective_level(rules::Dict{RuleKey,LogLevel}, group::Union{Symbol,RuleKey})::LogLevel
+@inline function _effective_level(rules::Dict{RuleKey, LogLevel}, group::Union{Symbol, RuleKey})::LogLevel
     path = _tokey(group) #::NTuple{N,Symbol}
     return _effective_level_chain(rules, path)
 end
 
-@generated function _effective_level_chain(rules::Dict{RuleKey,LogLevel}, path::NTuple{N,Symbol}
+@generated function _effective_level_chain(rules::Dict{RuleKey, LogLevel}, path::NTuple{N, Symbol}
 )::LogLevel where {N}
     steps = Vector{Expr}()
     for n = N:-1:1
@@ -146,7 +146,7 @@ _lvname(lv::LogLevel) = string(lv)
 end
 
 function _build_children(keys::AbstractVector{<:RuleKey})
-    children = Dict{RuleKey,Vector{Symbol}}()
+    children = Dict{RuleKey, Vector{Symbol}}()
     roots_set = Set{Symbol}()
     for k in keys
         push!(roots_set, k[1])
@@ -165,7 +165,7 @@ function _build_children(keys::AbstractVector{<:RuleKey})
     return roots, children
 end
 
-function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
+function _print_tree(io::IO, rules::Dict{RuleKey, LogLevel};
     align_style::Symbol=:global, # :global / :per_depth / others = no alignment
     gutter::Int=4
 )
@@ -173,7 +173,7 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
     roots, children = _build_children(paths)
 
     # cache: Symbol => (name, width)
-    infocache = Dict{Symbol,Tuple{String,Int}}()
+    infocache = Dict{Symbol, Tuple{String, Int}}()
     @inline getinfo(sym::Symbol) =
         get!(infocache, sym) do
             nm = string(sym)
@@ -181,7 +181,7 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
         end
 
     # 1) per-depth (depth = length(path)) maximum width of ":name"
-    widths = Dict{Int,Int}() # depth => max width of ":" * name
+    widths = Dict{Int, Int}() # depth => max width of ":" * name
     @inbounds for k in paths
         d = length(k)
         w = 1 + getinfo(k[end])[2]
@@ -190,7 +190,7 @@ function _print_tree(io::IO, rules::Dict{RuleKey,LogLevel};
 
     # 2) per-depth target starting column (absolute column)
     depths = sort!(collect(keys(widths)))
-    effcol = Dict{Int,Int}()
+    effcol = Dict{Int, Int}()
     if align_style === :global
         maxcol = maximum(k -> (2 + 3 * length(k)) + widths[length(k)] + gutter, paths)
         @inbounds for d in depths
