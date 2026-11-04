@@ -19,17 +19,17 @@ and then forwarding those choices through every intermediate function, a compone
 `set_log_level!` has a Boolean convenience method:
 
 ```julia
-set_log_level!(logger, group, true)
-set_log_level!(logger, group, false)
+set_log_level!(logger, group => true)
+set_log_level!(logger, group => false)
 ```
 
-It also accepts multiple `group, level` pairs in one call:
+It also accepts multiple pairs in one atomic update:
 
 ```julia
 set_log_level!(logger,
-    (:solver, :presolve), true,
-    (:solver, :heuristics), false,
-    (:solver, :diagnostics), -1000,
+    (:solver, :presolve) => true,
+    (:solver, :heuristics) => false,
+    (:solver, :diagnostics) => -1000,
 )
 ```
 
@@ -49,8 +49,8 @@ const logger = ComponentLogger()
 the same pattern becomes:
 
 ```julia
-set_log_level!(group, true)
-set_log_level!(group, false)
+set_log_level!(group => true)
+set_log_level!(group => false)
 clogenabled(group)
 ```
 
@@ -73,9 +73,9 @@ function solve(problem)
     return optimize!(problem)
 end
 
-set_log_level!((:solver, :presolve), true)
-set_log_level!((:solver, :heuristics), false)
-set_log_level!((:solver, :cache), true)
+set_log_level!((:solver, :presolve) => true)
+set_log_level!((:solver, :heuristics) => false)
+set_log_level!((:solver, :cache) => true)
 
 solve(problem)
 ```
@@ -125,12 +125,12 @@ This allows one hierarchy to encode progressively stronger modes without introdu
 
 Standard level values are:
 
-| Level | Integer |
-|:--|--:|
+| Level   | Integer |
+| :------ | ------: |
 | `Debug` | `-1000` |
-| `Info` | `0` |
-| `Warn` | `1000` |
-| `Error` | `2000` |
+| `Info`  |     `0` |
+| `Warn`  |  `1000` |
+| `Error` |  `2000` |
 
 Custom integer levels are also accepted through Julia's `LogLevel` representation.
 
@@ -142,8 +142,8 @@ Module-scoped state is the default design, but the same control-plane pattern ca
 logger_a = ComponentLogger()
 logger_b = ComponentLogger()
 
-set_log_level!(logger_a, (:solver, :heuristics), true)
-set_log_level!(logger_b, (:solver, :heuristics), false)
+set_log_level!(logger_a, (:solver, :heuristics) => true)
+set_log_level!(logger_b, (:solver, :heuristics) => false)
 
 solve(problem_a, logger_a)
 solve(problem_b, logger_b)

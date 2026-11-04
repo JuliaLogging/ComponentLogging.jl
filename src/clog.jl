@@ -78,11 +78,8 @@ macro forward_logger(logger_ex)
         $(esc(:clogenabled))(group) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group)
 
-        $(esc(:set_log_level!))(group, level) =
-            ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, level)
-
-        $(esc(:set_log_level!))(group, level, args...) =
-            ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), group, level, args...)
+        $(esc(:set_log_level!))(args...) =
+            ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), args...)
 
         $(esc(:get_log_level))(group) =
             ComponentLogging.get_log_level(ComponentLogging._resolve_logger($logger), group)

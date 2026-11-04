@@ -47,27 +47,12 @@ function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
     return ComponentLogger(rules; sink)
 end
 
-function set_log_level!(logger::ComponentLogger, group, lvl::Union{Integer, LogLevel, Bool})
-    grp = _tokey(group)
-    lvl = _tolevel(lvl)
+function set_log_level!(logger::ComponentLogger, args::Pair{<:Union{Symbol, RuleKey}, <:Union{Integer, LogLevel}}...)
     @lock logger.lock begin
         state = @atomic :acquire logger.state
         rules = copy(state.rules)
-        rules[grp] = lvl
-        state = _LoggerState(rules, minimum(values(rules)))
-        @atomic :release logger.state = state
-    end
-    return logger
-end
-
-function set_log_level!(logger::ComponentLogger, group, lvl, args...)
-    iseven(length(args)) || throw(ArgumentError("arguments after logger must be group/level pairs"))
-    @lock logger.lock begin
-        state = @atomic :acquire logger.state
-        rules = copy(state.rules)
-        rules[_tokey(group)] = _tolevel(lvl)
-        @inbounds for i in 1:2:length(args)
-            rules[_tokey(args[i])] = _tolevel(args[i+1])
+        @inbounds for (group, lvl) in args
+            rules[_tokey(group)] = _tolevel(lvl)
         end
         state = _LoggerState(rules, minimum(values(rules)))
         @atomic :release logger.state = state

@@ -43,9 +43,9 @@ component-based minimum level rules. Rules are defined on paths of symbols
 ComponentLogger
 
 """
-    set_log_level!(logger, group, lvl, args...) -> ComponentLogger
+    set_log_level!(logger, rules::Pair...) -> ComponentLogger
 
-Set or update the minimum level for a specific component `group` on `logger`. `group` may be a `Symbol` or a `NTuple{N,Symbol}` tuple; `lvl` can be `LogLevel`, `Integer`, or `Bool`. Additional `args...` are accepted as more `group, level` pairs and are applied atomically in one update.
+Set or update component thresholds on `logger` using `group => level` pairs. Each `group` must be a `Symbol` or an `NTuple{N,Symbol}` tuple; each `level` must be a `LogLevel`, `Integer`, or `Bool`. If a group appears more than once, the last pair wins. Return `logger`.
 
 If a level is a `Bool`, it is treated as a simple switch: `true` sets the rule to `0` and `false` sets it to `1` (which disables the default `clogenabled(logger, group)` check).
 
@@ -55,7 +55,8 @@ Example:
 
 ```julia
 logger = ComponentLogger()
-set_log_level!(logger, :solver, 1000, (:solver, :iteration), -1000)
+set_log_level!(logger, :solver => 1000)
+set_log_level!(logger, (:solver, :iteration) => -1000, (:solver, :heuristics) => false)
 ```
 """
 set_log_level!
@@ -213,7 +214,7 @@ const pkg_logger = Ref(ComponentLogger(...))
 clog(:core, 0, "hello")
 @clog :core 0 "hello"
 @cinfo :core "hello"
-set_log_level!(:core, 1000)
+set_log_level!(:core => 1000)
 get_log_level(:core)
 with_min_level(2000) do
     # Temporarily raise this logger's minimum level (fast early rejection).

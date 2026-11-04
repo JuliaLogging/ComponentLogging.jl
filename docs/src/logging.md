@@ -67,7 +67,7 @@ clogenabled(logger, group)
 ```
 
 ```julia
-set_log_level!(logger, :core, false)
+set_log_level!(logger, :core => false)
 arr = randn(1000)
 sumsq = 0.0
 for i in eachindex(arr)
@@ -105,7 +105,7 @@ clog(:core, 0, "hello")
 @cinfo :core "hello"
 
 clogenabled(:core)
-set_log_level!(:core, true)
+set_log_level!(:core => true)
 get_log_level(:core)
 ```
 

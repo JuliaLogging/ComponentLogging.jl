@@ -59,7 +59,7 @@ ComponentLogger
 
 ### Hierarchical runtime switches
 
-The same group hierarchy can be used as a lightweight runtime control plane. With the forwarding helpers created by `@forward_logger`, `set_log_level!(group, true)` enables the group's default `Info`-level check, while `set_log_level!(group, false)` disables it.
+The same group hierarchy can be used as a lightweight runtime control plane. With the forwarding helpers created by `@forward_logger`, `set_log_level!(group => true)` enables the group's default `Info`-level check, while `set_log_level!(group => false)` disables it.
 
 ```julia
 function solve(problem)
@@ -73,10 +73,11 @@ function solve(problem)
 end
 
 # Change behavior globally for this module/component.
-set_log_level!((:solver, :presolve), true)
-set_log_level!((:solver, :heuristics), false)
-set_log_level!((:solver, :cache), true)
-
+set_log_level!(
+    (:solver, :presolve) => true,
+    (:solver, :heuristics) => false,
+    (:solver, :cache) => true,
+)
 solve(problem)
 ```
 
@@ -85,11 +86,13 @@ This lets deeply nested behavior be switched at runtime without passing `verbose
 Without forwarding helpers, use the logger-explicit forms instead:
 
 ```julia
-set_log_level!(logger, (:solver, :heuristics), false)
+set_log_level!(logger, (:solver, :heuristics) => false)
 clogenabled(logger, (:solver, :heuristics))
 # Query the level after hierarchical fallback.
 get_log_level(logger, (:solver, :heuristics))
 ```
+
+Since v2.0.0, `set_log_level!` accepts only `Pair` arguments after the logger (or only pairs in its forwarded form); the old separate group and level arguments are no longer supported.
 
 ## Core APIs
 
@@ -170,7 +173,7 @@ by another module.
 For example, the generated `clog` is conceptually equivalent to the following module-local forwarding method:
 `clog(args...; kwargs...) = ComponentLogging.clog(logger, args...; kwargs...)`
 
-### `with_min_level` 
+### `with_min_level`
 
 Temporarily sets the logger’s global minimum level and restores it on exit.
 

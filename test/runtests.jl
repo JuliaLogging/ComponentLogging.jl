@@ -186,20 +186,20 @@ end
         @test Logging.min_enabled_level(logger) === Info
         @test (@atomic :acquire logger.state).min_level === Info
 
-        set_log_level!(logger, :foo, -2000)
-        set_log_level!(logger, :bar, -2000)
+        set_log_level!(logger, :foo => -2000)
+        set_log_level!(logger, :bar => -2000)
         @test Logging.min_enabled_level(logger) === LogLevel(-2000)
         @test (@atomic :acquire logger.state).min_level === LogLevel(-2000)
 
-        set_log_level!(logger, :foo, 2000)
+        set_log_level!(logger, :foo => 2000)
         @test Logging.min_enabled_level(logger) === LogLevel(-2000)
-        set_log_level!(logger, :bar, 2000)
+        set_log_level!(logger, :bar => 2000)
         @test Logging.min_enabled_level(logger) === Info
 
         local logger = ComponentLogger(Dict(:__default__ => 0, :a => -2000); sink)
         oldstate = @atomic :acquire logger.state
         oldrules = oldstate.rules
-        set_log_level!(logger, :a, 2000)
+        set_log_level!(logger, :a => 2000)
         newstate = @atomic :acquire logger.state
 
         @test newstate !== oldstate
@@ -213,21 +213,15 @@ end
     @testset "set_log_level!" begin
         local logger = ComponentLogger(Dict(:__default__ => 0, :sw => 0); sink)
         @test clogenabled(logger, :sw)
-        set_log_level!(logger, :sw, false)
+        @test set_log_level!(logger, :sw => false) === logger
         @test !clogenabled(logger, :sw)
-        set_log_level!(logger, :sw, true)
+        set_log_level!(logger, :sw => true)
         @test clogenabled(logger, :sw)
 
         logger = ComponentLogger(Dict(:__default__ => 0, :a => 1000, :b => 2000); sink)
         oldstate = @atomic :acquire logger.state
         oldrules = oldstate.rules
-        result = set_log_level!(
-            logger,
-            :a, -2000,
-            :b, false,
-            (:c, :d), 0,
-            :e, true,
-        )
+        result = set_log_level!(logger, :a => -2000, :b => false, (:c, :d) => Info, :e => true)
         newstate = @atomic :acquire logger.state
 
         @test result === logger
@@ -247,7 +241,9 @@ end
 
         logger = ComponentLogger(Dict(:__default__ => 0, :a => 1000); sink)
         oldstate = @atomic :acquire logger.state
-        @test_throws ArgumentError set_log_level!(logger, :a, -2000, :b)
+        @test_throws MethodError set_log_level!(logger, :a, -2000)
+        @test_throws MethodError set_log_level!(logger, :a, -2000, :b, 2000)
+        @test_throws MethodError set_log_level!(logger, :a => 1.5)
         @test (@atomic :acquire logger.state) === oldstate
         @test clogenabled(logger, :a, 1000)
         @test !clogenabled(logger, :a, -2000)
@@ -258,13 +254,13 @@ end
         groups = [Symbol("group", string(i)) for i in 1:32]
 
         @sync for group in groups
-            Threads.@spawn set_log_level!(logger, group, -2000)
+            Threads.@spawn set_log_level!(logger, group => -2000)
         end
         @test Logging.min_enabled_level(logger) === LogLevel(-2000)
         @test all(group -> clogenabled(logger, group, -2000), groups)
 
         @sync for group in groups
-            Threads.@spawn set_log_level!(logger, group, 2000)
+            Threads.@spawn set_log_level!(logger, group => 2000)
         end
         @test Logging.min_enabled_level(logger) === Info
         @test all(group -> !clogenabled(logger, group, -2000), groups)
@@ -274,7 +270,7 @@ end
         niter = 20_000
         writer = Threads.@spawn begin
             for i in 1:niter
-                set_log_level!(logger, :a, isodd(i) ? -2000 : 2000)
+                set_log_level!(logger, :a => (isodd(i) ? -2000 : 2000))
             end
         end
         readers = map(1:nreaders) do _
@@ -292,7 +288,7 @@ end
         logger = ComponentLogger(Dict(:__default__ => 0, :a => -2000, (:a, :b) => 1000); sink)
         writer = Threads.@spawn begin
             for i in 1:niter
-                set_log_level!(logger, (:a, :b), isodd(i) ? -2000 : 2000)
+                set_log_level!(logger, (:a, :b) => (isodd(i) ? -2000 : 2000))
             end
         end
         readers = map(1:nreaders) do _
@@ -317,10 +313,14 @@ end
         @test isempty(String(take!(ForwardLoggerTest.buf)))
 
         @test ForwardLoggerTest.get_log_level(:core) === Warn
-        ForwardLoggerTest.set_log_level!(:core, 0)
+        @test ForwardLoggerTest.set_log_level!(:core => 0) === ForwardLoggerTest.logger
         @test ForwardLoggerTest.clogenabled(:core, 0)
         @test ForwardLoggerTest.get_log_level(:core) === Info
-        set_log_level!(ForwardLoggerTest.logger, :core, 1000)
+
+        @test ForwardLoggerTest.set_log_level!(:core => 1000, :switch => false) === ForwardLoggerTest.logger
+        @test ForwardLoggerTest.get_log_level(:core) === Warn
+        @test !ForwardLoggerTest.clogenabled(:switch)
+        @test_throws MethodError ForwardLoggerTest.set_log_level!(:core, 0)
 
         @test ForwardLoggerTest.macro_side_effects() == [1, 2]
         @test isempty(String(take!(ForwardLoggerTest.buf)))
