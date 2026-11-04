@@ -49,8 +49,10 @@ permissions:
   contents: write
 
 concurrency:
-  group: benchledger-database
+  # Share the gh-pages lock with the documentation job in CI.yml.
+  group: gh-pages-deploy-${{ github.repository }}
   cancel-in-progress: false
+  queue: max
 
 jobs:
   benchmark:
