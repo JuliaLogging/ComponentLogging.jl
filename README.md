@@ -27,16 +27,15 @@ rules = Dict(
     :__default__  => 0       # fallback for unmatched groups (default to Info)
 )
 
-sink = PlainLogger()                   # any AbstractLogger sink works
-clogger = ComponentLogger(rules; sink) # router/filter; does not own IO
+logger = ComponentLogger(rules; sink=PlainLogger())
 
-@forward_logger clogger
+@forward_logger logger
 
 clog(:core, 0, "starting job"; jobid=42)   # 0 = Info
 clog(:io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
 ```
 
-To inspect the hierarchical rules inside `clogger`, use `display(clogger)`.
+To inspect the hierarchical rules inside `logger`, use `display(logger)`.
 
 Output:
 
@@ -86,15 +85,15 @@ This lets deeply nested behavior be switched at runtime without passing `verbose
 Without forwarding helpers, use the logger-explicit forms instead:
 
 ```julia
-set_log_level!(clogger, (:solver, :heuristics), false)
-clogenabled(clogger, (:solver, :heuristics))
+set_log_level!(logger, (:solver, :heuristics), false)
+clogenabled(logger, (:solver, :heuristics))
 # Query the level after hierarchical fallback.
-get_log_level(clogger, (:solver, :heuristics))
+get_log_level(logger, (:solver, :heuristics))
 ```
 
-### Core APIs
+## Core APIs
 
-`clog`
+### `clog`
 
 Emits a log record for a group at a given level.
 
@@ -113,24 +112,24 @@ clog(logger, group, level, msg...; kwargs...)
 **Example:**
 
 ```julia
-clog(clogger, :core,  0, "starting job"; jobid=42)   # 0 = Info
-clog(clogger, :io, 1000, "retrying I/O"; attempt=3)  # 1000 = Warn
+clog(logger, :core,  0, "starting job"; jobid=42)   # 0 = Info
+clog(logger, :io, 1000, "retrying I/O"; attempt=3)  # 1000 = Warn
 ```
 
-`clogenabled`
+### `clogenabled`
 
 Checks whether records at `level` are enabled for `group`.
 
 **Example:**
 
 ```julia
-if clogenabled(clogger, :core, 1000)  # guard expensive work
+if clogenabled(logger, :core, 1000)  # guard expensive work
     stats = compute_expensive_stats()
-    clog(clogger, :core, 1000, "stats ready"; stats)
+    clog(logger, :core, 1000, "stats ready"; stats)
 end
 ```
 
-`@clog`
+### `@clog`
 
 What if generating the log message itself incurs a computational cost? `@clog` provides for the lazy construction of messages: it evaluates expressions only when the corresponding log level is enabled.
 
@@ -157,75 +156,28 @@ end
 
 If the final message expression evaluates to `nothing`, no log record is emitted.
 
-`@forward_logger`
+### `@forward_logger`
 
 ```julia
-@forward_logger clogger
+@forward_logger logger
 ```
 
-This creates module-local forwarding methods for `clog`, `clogenabled`,
-`set_log_level!`, `get_log_level`, and `with_min_level`, plus local `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros that use `clogger`. The logger expression is bound where
+This creates module-local forwarding methods for `clog`, `cdebug`, `cinfo`, `cwarn`, `cerror`, `clogenabled`,
+`set_log_level!`, `get_log_level`, `with_min_level`, `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros. The logger expression is bound where
 `@forward_logger` is declared, including when the generated macro is imported
 by another module.
 
 For example, the generated `clog` is conceptually equivalent to the following module-local forwarding method:
-`clog(args...; kwargs...) = ComponentLogging.clog(clogger, args...; kwargs...)`
+`clog(args...; kwargs...) = ComponentLogging.clog(logger, args...; kwargs...)`
 
-## More examples
+### `with_min_level` 
 
-Assuming you set up the forwarding helpers, you can use `clog` like this:
-
-```julia
-function compute_vector_sum(n)
-    clog(:core, 2, "Processing a $n-element vector")
-    v = randn(n)
-    s = sum(v)
-    clog(:core, 0, "Done."; s, v)
-    return s
-end
-compute_vector_sum(3);
-```
-
-Output:
-
-```julia
-Processing a 3-element vector
-Done.
- s = 2.435219412665466
- v = [-0.20970686116839346, 1.2387800065077361, 1.4061462673261231]
-```
-
-### Avoid work when logs are off — `clogenabled`
-
-`clogenabled` checks whether a given component is enabled at a given level. It is intended to drive control‑flow decisions so that certain code runs only when logging is enabled. Returns `Bool`.
-
-```julia
-function compute_sumsq()
-    arr = randn(1000)
-    sumsq = 0.0
-    for i in eachindex(arr)
-        x = arr[i]
-        sumsq += x^2
-        if clogenabled(:core, 1)
-            # Compute mean and standard deviation (intermediates) only when logging is enabled
-            meanval = mean(arr[1:i])
-            stdval = std(arr[1:i])
-            clog(:core, 1, "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)")
-        end
-    end
-end
-```
-
-By guarding with `clogenabled`, intermediate computations are performed only when logs will be emitted, maximizing performance.
-
-### Temporarily raise/lower the minimum level
-
-`with_min_level` temporarily sets the logger’s global minimum level and restores it on exit.
+Temporarily sets the logger’s global minimum level and restores it on exit.
 
 For example, to benchmark `compute_sumsq()` without any logging‑related work:
 
 ```julia
-with_min_level(2000) do
+with_min_level(logger, 2000) do
     @benchmark compute_sumsq()
 end
 ```

@@ -66,7 +66,22 @@ The no-level form checks at `Info`:
 clogenabled(logger, group)
 ```
 
-This also makes `clogenabled` useful as a lightweight runtime switch; see [Hierarchical Runtime Control](@ref).
+```julia
+set_log_level!(logger, :core, false)
+arr = randn(1000)
+sumsq = 0.0
+for i in eachindex(arr)
+    x = arr[i]
+    sumsq += x^2
+    if clogenabled(logger, :core) # will be skipped
+        meanval = mean(arr[1:i])
+        stdval = std(arr[1:i])
+        clog(:core, 1, "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)")
+    end
+end
+```
+
+This also makes `clogenabled` useful as a lightweight runtime switch (see [Hierarchical Runtime Control](@ref)).
 
 `@clog` provides lazy message construction and automatically captures caller metadata:
 
