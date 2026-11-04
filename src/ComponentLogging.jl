@@ -256,7 +256,7 @@ function Base.show(io::IO, ::MIME"text/plain", logger::ComponentLogger)
     _print_tree(io, rules)
 end
 
-include("api.jl")
+include("clog.jl")
 include("docstrings.jl")
 
 end # module

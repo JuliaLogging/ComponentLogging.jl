@@ -99,7 +99,7 @@ get_log_level(clogger, (:solver, :heuristics))
 Emits a log record for a group at a given level.
 
 ```julia
-clog(logger,        group, level, msg...; kwargs...)
+clog(logger, group, level, msg...; kwargs...)
 ```
 
 **Arguments:**
@@ -132,13 +132,13 @@ end
 
 `@clog`
 
-Evaluates the block only when enabled and logs its return value.
+What if generating the log message itself incurs a computational cost? `@clog` provides for the lazy construction of messages: it evaluates expressions only when the corresponding log level is enabled.
 
-Use `@clog logger group level msg...`, or after `@forward_logger`, the local
-form `@clog group level msg...`. It evaluates message expressions only when
-logging is enabled, keeps them inline to avoid closure capture, and captures the
-emitting call's module, file, and line automatically. If the final message
-expression evaluates to `nothing`, no log record is emitted.
+```julia
+@clog logger group level msg...
+```
+
+**Example:**
 
 ```julia
 arr = randn(1000)
@@ -154,6 +154,8 @@ for i in eachindex(arr)
     end
 end
 ```
+
+If the final message expression evaluates to `nothing`, no log record is emitted.
 
 `@forward_logger`
 

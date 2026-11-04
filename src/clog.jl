@@ -60,8 +60,17 @@ macro forward_logger(logger_ex)
         $(esc(:clog))(group, level, message...; kwargs...) =
             ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, level, message...; kwargs...)
 
-        $(esc(:clog))(group, message...; kwargs...) =
-            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, message...; kwargs...)
+        $(esc(:cdebug))(group, message...; kwargs...) =
+            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, -2000, message...; kwargs...)
+
+        $(esc(:cinfo))(group, message...; kwargs...) =
+            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, 0, message...; kwargs...)
+
+        $(esc(:cwarn))(group, message...; kwargs...) =
+            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, 1000, message...; kwargs...)
+
+        $(esc(:cerror))(group, message...; kwargs...) =
+            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, 2000, message...; kwargs...)
 
         $(esc(:clogenabled))(group, level) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group, level)
