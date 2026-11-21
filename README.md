@@ -6,8 +6,6 @@
 
 ComponentLogging.jl is a lightweight, high-performance logging layer for Julia built around _explicit component loggers_ and _hierarchical log-level control_.
 
-Unlike Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Logging/), which dynamically selects the active logger from the current task with a global fallback, ComponentLogging primarily associates shared logging configuration with a module or software component. This provides stable hierarchical control across tasks and threads while retaining explicit logger passing when execution-specific logging is needed.
-
 ## Installation
 
 ```julia
@@ -16,39 +14,21 @@ julia>] add ComponentLogging
 
 ## Quick start
 
+This package lets you manage a hierarchy of log levels. Log messages are filtered or printed by group. Groups are represented as `NTuple{N,Symbol}`. The minimum enabled log level is usually specified as an integer. To construct a logger, pass `groups=>level` pairs to `ComponentLogger()`.
+
 ```julia
 using ComponentLogging
 
-# Keys = groups; Values = minimum enabled level (integer or LogLevel)
-rules = Dict(
+logger = ComponentLogger(
     :core         => 0,      # Info+
     :io           => 1000,   # Warn+
-    (:net, :http) => 2000,   # Error+
-    :__default__  => 0       # fallback for unmatched groups (default to Info)
+    (:net, :http) => 2000;   # Error+
+    sink=PlainLogger()
 )
-
-logger = ComponentLogger(rules; sink=PlainLogger())
-
 @forward_logger logger
 
 clog(:core, 0, "starting job"; jobid=42)   # 0 = Info
 clog(:io, 1000, "retrying I/O"; attempt=3) # 1000 = Warn
-```
-
-To inspect the hierarchical rules inside `logger`, use `display(logger)`.
-
-Output:
-
-```text
-ComponentLogger
-    sink:  PlainLogger
-    min:   Info
-    rules: 4
-     ├─ :__default__     Info
-     ├─ :core            Info
-     ├─ :io              Warn
-     └─ :net
-            └─ :http         Error
 ```
 
 **What the rules mean**
@@ -56,6 +36,20 @@ ComponentLogger
 - **Key**: a group (`Symbol` or `NTuple{N,Symbol}`) such as `:core` or `(:net,:http)`.
 - **Value**: the minimum level enabled for that group. Messages below this level are filtered out.
 - Define a catch-all like `:__default__ => 0` to control unmatched groups.
+
+Enter `logger` in the REPL or call `display(logger)` to print the logger's hierarchy.
+
+```text
+ComponentLogger
+ sink:  PlainLogger
+ min:   Info
+ rules: 4
+  ├─ :__default__     Info
+  ├─ :core            Info
+  ├─ :io              Warn
+  └─ :net
+     └─ :http         Error
+```
 
 ### Hierarchical runtime switches
 

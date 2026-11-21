@@ -10,7 +10,7 @@ The package is designed for software where logging policy naturally belongs to a
 
 ## Logger ownership: explicit scope vs task scope
 
-Julia's standard [`Logging`](https://docs.julialang.org/en/v1/stdlib/Logging/) system dynamically selects the active logger from the current task, with a global logger as fallback. This makes the logger part of the current execution context: different tasks can carry different loggers, and application code can control logging for an entire dynamic call tree with `with_logger`.
+Julia's standard [Logging](https://docs.julialang.org/en/v1/stdlib/Logging/) dynamically selects the active logger from the current task, with the global logger as a fallback. The logger is part of the execution context, so different tasks can carry different loggers, and application code can control logging across an entire dynamic call tree with `with_logger`. ComponentLogging primarily shares logging configuration at the module or component level, providing consistent hierarchical control across tasks and threads. Callers can also pass a logger explicitly when a particular execution needs its own logging policy.
 
 ComponentLogging deliberately chooses a different default ownership model. A `ComponentLogger` is supplied explicitly, either passed through calls or bound by `@forward_logger` to module-local forwarding APIs, rather than selected from task-local state.
 
