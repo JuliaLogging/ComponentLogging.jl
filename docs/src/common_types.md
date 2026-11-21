@@ -16,7 +16,7 @@ Groups can be a `Symbol` or a tuple of symbols:
 (:solver, :linear_system)
 ```
 
-A more specific rule takes precedence over its parent. If no exact rule exists, lookup falls back through parent prefixes and finally to `:__default__` (which defaults to `Info` when using the general dictionary constructor).
+A more specific rule takes precedence over its parent. If no exact rule exists, lookup falls back through parent prefixes and finally to `:__default__` (which defaults to `Info`).
 
 ```julia
 logger = ComponentLogger(Dict(
@@ -37,6 +37,15 @@ Here `:solver` and unmatched descendants require level `1000`, while `(:solver, 
     Thread safety was introduced in v0.2.0. High-performance copy-on-write snapshots were introduced in v0.3.0.
 
 The logger owns routing/filtering state, not final output. Accepted records are delegated to `logger.sink`; output thread safety therefore depends on the sink.
+
+## Changing the sink
+
+Use [`set_sink`](@ref) to create a new `ComponentLogger` with the current rule snapshot and a different sink.
+
+```julia
+logger = ComponentLogger(:io => 1000) # the default sink is ConsoleLogger(Debug)
+new_logger = set_sink(logger, PlainLogger())
+```
 
 ## Changing rules
 
@@ -108,6 +117,7 @@ Routing and presentation are intentionally separate: `ComponentLogger` applies i
 ComponentLogging
 ComponentLogger
 PlainLogger
+set_sink
 set_log_level!
 get_log_level
 with_min_level

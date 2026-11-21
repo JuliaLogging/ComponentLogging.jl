@@ -67,6 +67,8 @@ clogenabled(logger, group)
 ```
 
 ```julia
+using Statistics: mean, std
+
 set_log_level!(logger, :core => false)
 arr = randn(1000)
 sumsq = 0.0
@@ -76,7 +78,7 @@ for i in eachindex(arr)
     if clogenabled(logger, :core) # will be skipped
         meanval = mean(arr[1:i])
         stdval = std(arr[1:i])
-        clog(:core, 1, "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)")
+        clog(logger, :core, 1, "i=$i, x=$x, mean=$(meanval), std=$(stdval), sumsq=$(sumsq)")
     end
 end
 ```
@@ -94,7 +96,7 @@ end
 
 ## Forwarding macro
 
-At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus local `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` forms bound to `logger_expr`:
+At module top level, `@forward_logger logger_expr` creates local forwarding methods for `clog`, `cdebug`, `cinfo`, `cwarn`, `cerror`, `clogenabled`, `set_sink`, `set_log_level!`, `get_log_level`, and `with_min_level`, plus local `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` forms bound to `logger_expr`:
 
 ```julia
 const logger = ComponentLogger(...)
@@ -110,6 +112,8 @@ get_log_level(:core)
 ```
 
 The expression can be a `Ref` or field expression and is resolved at each call. Its global names are bound in the module that invokes `@forward_logger`, even if its generated `@clog` is imported elsewhere.
+
+`set_sink(sink)` returns a new logger. To use it for later calls, assign it to the logger binding or store it in the `Ref` used by `logger_expr`. Use `Ref{ComponentLogger}` if the sink type can change.
 
 ## `@clog` and level shorthands
 

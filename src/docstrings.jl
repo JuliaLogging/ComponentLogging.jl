@@ -26,21 +26,29 @@ clog(clogger, :core, 0, "something happened")
 """ ComponentLogging
 
 """
-    ComponentLogger(; sink=ConsoleLogger(Debug))
+    ComponentLogger(rules::Pair...; sink=ConsoleLogger(Debug))
     ComponentLogger(rules::AbstractDict; sink=ConsoleLogger(Debug))
 
 A logger that delegates to an underlying sink (`AbstractLogger`) while applying
 component-based minimum level rules. Rules are defined on paths of symbols
 (`NTuple{N,Symbol}`). A lookup walks up the path and falls back to `(:__default__,)`.
 
-- `rules`: mapping from `NTuple{N,Symbol}` to `LogLevel`. If no explicit
-  `(:__default__,)` rule exists, lookup falls back to `Info`.
+- `rules`: `group => level` pairs or a dictionary of rules. A group can be a `Symbol` or a tuple of symbols, and a level can be a `LogLevel`, `Integer`, or `Bool`. If a group appears in multiple pairs, the last pair wins. With no explicit default rule, lookup falls back to `Info`.
 - `sink`: the underlying `AbstractLogger` that actually handles messages.
 - Configuration updates are serialized and published as atomic copy-on-write
   (COW) snapshots.
 - Each snapshot includes a `min_level` cache for fast checks.
 """
 ComponentLogger
+
+"""
+    set_sink(logger::ComponentLogger, sink::AbstractLogger) -> ComponentLogger
+
+Return a new `ComponentLogger` with `sink` and the current rule snapshot from
+`logger`, including its current minimum level. The two loggers can be
+configured independently after the call.
+"""
+set_sink
 
 """
     set_log_level!(logger, rules::Pair...) -> ComponentLogger
@@ -94,16 +102,15 @@ with_min_level
 
 Emit a log message through the given `logger`. `group` is a `Symbol`
 or `NTuple{N,Symbol}`. `level` may be `LogLevel` or `Integer`. `msg` can be one
-or more values; tuples are passed through as-is.
+or more values; message arguments are collected into a tuple.
 
 Keyword arguments `file`, `line`, and arbitrary `kwargs...` are forwarded to the
 underlying logger sink.
 
-If `@forward_logger` is already used, the following forwarding signatures are available:
+If `@forward_logger` is already used, the following forwarding signature is available:
 
 ```julia
 clog(group, level, msg...; kwargs...)
-clog(group, msg...; kwargs...)
 ```
 """
 clog
@@ -163,7 +170,7 @@ Example:
 """
     @cdebug logger group msg...
 
-Shorthand for `@clog logger group -2000 msg...`.
+Shorthand for `@clog logger group -1000 msg...`.
 """
 :(@cdebug)
 
@@ -191,8 +198,8 @@ Shorthand for `@clog logger group 2000 msg...`.
 """
     @forward_logger logger_expr
 
-Define forwarding methods in the current module so you can call `clog`,
-`clogenabled`, `set_log_level!`, `get_log_level`, and `with_min_level` without
+Define forwarding methods in the current module so you can call `clog`, `cdebug`, `cinfo`, `cwarn`, `cerror`,
+`clogenabled`, `set_sink`, `set_log_level!`, `get_log_level`, and `with_min_level` without
 explicitly passing a logger each time. Also define a local `@clog group level
 msg...` and local `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` shorthands bound
 to `logger_expr`.
@@ -202,6 +209,8 @@ such as `STATE[].logger`. Its names are bound in the module that invokes
 `@forward_logger`; importing the generated `@clog` elsewhere does not change
 which logger expression it uses. The expression is evaluated at each call, so
 replacing a `Ref` value affects subsequent calls.
+
+`set_sink(sink)` returns a new logger. To use it for later calls, assign it to the logger binding or store it in the `Ref` used by `logger_expr`. Use `Ref{ComponentLogger}` if the sink type can change.
 
 Example:
 

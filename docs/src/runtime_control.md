@@ -16,7 +16,7 @@ and then forwarding those choices through every intermediate function, a compone
 
 ## Boolean switches
 
-`set_log_level!` has a Boolean convenience method:
+`set_log_level!` accepts Boolean levels:
 
 ```julia
 set_log_level!(logger, group => true)

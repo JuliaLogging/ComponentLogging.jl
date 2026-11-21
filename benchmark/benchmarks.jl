@@ -11,7 +11,7 @@ Logging.catch_exceptions(::NullSinkLogger) = false
 
 import ComponentLogging as CL
 const RK = CL.RuleKey
-const DEFAULT = try (CL.Default_Sym,) catch; (CL.DEFAULT_SYM,) end
+const DEFAULT = @static pkgversion(CL) >= v"0.3.0" ? (CL.Default_Sym,) : (CL.DEFAULT_SYM,)
 
 ## Create logger
 # Explicitly add rules for: default group, :opti, (:a,:b), and (:a,:b,:c,:d,:e,:f,:g,:h)
@@ -19,13 +19,13 @@ const TUP2 = (:a, :b)
 const TUP8 = (:a, :b, :c, :d, :e, :f, :g, :h)
 
 function make_logger(minlvl::Integer)
-    rules = Dict{RK,LogLevel}(
+    return CL.ComponentLogger(Dict(
         DEFAULT => minlvl,
         (:opti,) => minlvl,
         TUP2 => minlvl,
         TUP8 => minlvl,
+        ); sink=NullSinkLogger(Debug)
     )
-    return CL.ComponentLogger(rules; sink=NullSinkLogger(Debug))
 end
 
 const LG_ENABLED  = make_logger(0)     # Allow level 0
@@ -38,11 +38,11 @@ const MSG_TUP = ("x", 123, :sym)   # Multiple arguments/mixed types
 const Suite = BenchmarkGroup()
 
 # 1) Filtered path (min=2000, sending 0) - Decision and routing cost
-Suite["filtered"]                  = BenchmarkGroup()
-Suite["filtered"]["clog/default"]  = @benchmarkable CL.clog($LG_FILTERED, $DEFAULT, 0, $MSG_STR)
-Suite["filtered"]["clog/symbol"]   = @benchmarkable CL.clog($LG_FILTERED, :opti, 0, $MSG_STR)
-Suite["filtered"]["clog/tuple2"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP2, 0, $MSG_STR)
-Suite["filtered"]["clog/tuple8"]   = @benchmarkable CL.clog($LG_FILTERED, $TUP8, 0, $MSG_STR)
+Suite["filtered"]                 = BenchmarkGroup()
+Suite["filtered"]["clog/default"] = @benchmarkable CL.clog($LG_FILTERED, $DEFAULT, 0, $MSG_STR)
+Suite["filtered"]["clog/symbol"]  = @benchmarkable CL.clog($LG_FILTERED, :opti, 0, $MSG_STR)
+Suite["filtered"]["clog/tuple2"]  = @benchmarkable CL.clog($LG_FILTERED, $TUP2, 0, $MSG_STR)
+Suite["filtered"]["clog/tuple8"]  = @benchmarkable CL.clog($LG_FILTERED, $TUP8, 0, $MSG_STR)
 
 # 2) Allowed path (min=0, sending 0) - Decision + assembly + call
 Suite["enabled"] = BenchmarkGroup()
@@ -55,9 +55,14 @@ Suite["enabled"]["clog/tuple8/str"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8
 Suite["enabled"]["clog/default/tuple"] = @benchmarkable CL.clog($LG_ENABLED, $DEFAULT, 0, $MSG_TUP...)
 Suite["enabled"]["clog/tuple2/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP2, 0, $MSG_TUP...)
 Suite["enabled"]["clog/tuple8/tuple"]  = @benchmarkable CL.clog($LG_ENABLED, $TUP8, 0, $MSG_TUP...)
-# 3) Explicit macro path
-Suite["enabled"]["@clog"] = @benchmarkable CL.@clog $LG_ENABLED :opti 0 $MSG_STR
-Suite["filtered"]["@clog"] = @benchmarkable CL.@clog $LG_FILTERED :opti 0 $MSG_STR
+# 3) Macro path
+@static if pkgversion(CL) >= v"1.0.0-beta.1" || isdefined(CL, :_clog_expansion)
+    Suite["enabled"]["@clog"] = @benchmarkable CL.@clog $LG_ENABLED :opti 0 $MSG_STR
+    Suite["filtered"]["@clog"] = @benchmarkable CL.@clog $LG_FILTERED :opti 0 $MSG_STR
+else
+    Suite["enabled"]["@clog"] = @benchmarkable CL.@clog(:opti, 0, $MSG_STR) setup = (CL.set_module_logger(@__MODULE__, $LG_ENABLED))
+    Suite["filtered"]["@clog"] = @benchmarkable CL.@clog(:opti, 0, $MSG_STR) setup = (CL.set_module_logger(@__MODULE__, $LG_FILTERED))
+end
 
 ## Run & Display
 tune!(Suite; seconds=2.0)

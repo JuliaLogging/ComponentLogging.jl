@@ -1,5 +1,19 @@
 # Changelog
 
+## [Unreleased]
+
+## [2.1.0]
+
+### Added
+
+- Allow `ComponentLogger` to take `group => level` pairs directly, alongside the dictionary constructor.
+- Add `set_sink(logger, sink)` and its `@forward_logger` form `set_sink(sink)`. Both return a new logger with the new sink and the current rule snapshot.
+
+### Fixed
+
+- Remove stale exports for `get_logger`, `set_module_logger`, and `@bind_logger`, which were removed in `1.0.0-beta.1`.
+- Select the historical `@clog` and default-group interfaces when benchmarking older versions.
+
 ## [2.0.0]
 
 ### Changed
@@ -208,7 +222,8 @@ This release marks the stabilization of ComponentLogging's public API and core f
 
 - Initial release of `ComponentLogging.jl`: component-level routing, `clog`/`clogf`, `bind_logger`, minimal PlainLogger style, warn+ file:line display, colorized levels.
 
-[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v2.0.0...HEAD
+[Unreleased]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v2.1.0...HEAD
+[2.1.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v2.0.0...v2.1.0
 [2.0.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.1.1...v2.0.0
 [1.1.1]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.1.0...v1.1.1
 [1.1.0]: https://github.com/JuliaLogging/ComponentLogging.jl/compare/v1.0.1...v1.1.0

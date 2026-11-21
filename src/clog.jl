@@ -7,7 +7,7 @@ function clog(logger::AbstractLogger, group::Union{Symbol, RuleKey}, level::Unio
 end
 
 cdebug(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
-    clog(logger, group, -2000, message...; kwargs...)
+    clog(logger, group, -1000, message...; kwargs...)
 
 cinfo(logger::AbstractLogger, group::Union{Symbol, RuleKey}, message...; kwargs...) =
     clog(logger, group, 0, message...; kwargs...)
@@ -43,7 +43,7 @@ macro forward_logger(logger_ex)
             $helper($(QuoteNode(bound_logger)), group_ex, level_ex, msg_ex, __source__, __module__)
         end
         macro cdebug(group_ex, msg_ex...)
-            $helper($(QuoteNode(bound_logger)), group_ex, -2000, msg_ex, __source__, __module__)
+            $helper($(QuoteNode(bound_logger)), group_ex, -1000, msg_ex, __source__, __module__)
         end
         macro cinfo(group_ex, msg_ex...)
             $helper($(QuoteNode(bound_logger)), group_ex, 0, msg_ex, __source__, __module__)
@@ -61,7 +61,7 @@ macro forward_logger(logger_ex)
             ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, level, message...; kwargs...)
 
         $(esc(:cdebug))(group, message...; kwargs...) =
-            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, -2000, message...; kwargs...)
+            ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, -1000, message...; kwargs...)
 
         $(esc(:cinfo))(group, message...; kwargs...) =
             ComponentLogging.clog(ComponentLogging._resolve_logger($logger), group, 0, message...; kwargs...)
@@ -77,6 +77,8 @@ macro forward_logger(logger_ex)
 
         $(esc(:clogenabled))(group) =
             ComponentLogging.clogenabled(ComponentLogging._resolve_logger($logger), group)
+
+        $(esc(:set_sink))(sink) = ComponentLogging.set_sink(ComponentLogging._resolve_logger($logger), sink)
 
         $(esc(:set_log_level!))(args...) =
             ComponentLogging.set_log_level!(ComponentLogging._resolve_logger($logger), args...)
@@ -97,7 +99,7 @@ macro clog(logger_ex, group_ex, level_ex, msg_ex...)
 end
 
 macro cdebug(logger_ex, group_ex, msg_ex...)
-    _clog_expansion(esc(logger_ex), group_ex, -2000, msg_ex, __source__, __module__)
+    _clog_expansion(esc(logger_ex), group_ex, -1000, msg_ex, __source__, __module__)
 end
 
 macro cinfo(logger_ex, group_ex, msg_ex...)

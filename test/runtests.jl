@@ -90,6 +90,62 @@ end
         @test get_log_level(logger, :other) === Info
     end
 
+    @testset "constructors" begin
+        @test Logging.min_enabled_level(ComponentLogger(; sink)) === Info
+
+        local logger = ComponentLogger(:core => Debug, (:core,) => 1000, (:core, :detail) => true, :switch => false; sink)
+        @test get_log_level(logger, :core) === Warn
+        @test get_log_level(logger, (:core, :detail)) === Info
+        @test get_log_level(logger, :switch) === LogLevel(1)
+        @test Logging.min_enabled_level(logger) === Info
+
+        logger = ComponentLogger(:__default__ => Error; sink)
+        @test get_log_level(logger, :other) === Error
+        @test Logging.min_enabled_level(logger) === Error
+        @test_throws ArgumentError ComponentLogger(:core => 1.5; sink)
+
+        rules = Dict{ComponentLogging.RuleKey, LogLevel}((:core,) => Warn)
+        logger = ComponentLogger(rules; sink)
+        @test clogenabled(logger, :other)
+        rules[(:core,)] = Error
+        @test get_log_level(logger, :core) === Warn
+    end
+
+    @testset "set_sink" begin
+        original = ComponentLogger(:core => Warn, :trace => Debug; sink)
+        new_buf = IOBuffer()
+        new_sink = PlainLogger(stream=new_buf)
+        replacement = set_sink(original, new_sink)
+
+        @test replacement !== original
+        @test replacement isa ComponentLogger{typeof(new_sink)}
+        @test original.sink === sink
+        @test replacement.sink === new_sink
+        @test get_log_level(replacement, :core) === Warn
+        @test Logging.min_enabled_level(replacement) === Debug
+
+        clearbuf!()
+        clog(replacement, :core, Info, "filtered by inherited rule")
+        @test isempty(take!(new_buf))
+        clog(replacement, :core, Warn, "replacement sink")
+        @test occursin("replacement sink", String(take!(new_buf)))
+        @test isempty(take!(buf))
+        clog(original, :core, Warn, "original sink")
+        @test occursin("original sink", String(take!(buf)))
+        @test isempty(take!(new_buf))
+
+        set_log_level!(original, :core => Error)
+        @test get_log_level(replacement, :core) === Warn
+        set_log_level!(replacement, :core => Info)
+        @test get_log_level(original, :core) === Error
+
+        snapshot_logger = with_min_level(original, Error) do
+            set_sink(original, new_sink)
+        end
+        @test Logging.min_enabled_level(snapshot_logger) === Error
+        @test Logging.min_enabled_level(original) === Debug
+    end
+
     @testset "function API" begin
         @test_throws MethodError clog(logger, 0, "missing group")
         @test_throws MethodError clog(logger, :core, "implicit level")
@@ -354,6 +410,11 @@ end
         )
         ForwardLoggerFieldTest.emit()
         @test isempty(String(take!(field_buf)))
+
+        forwarded_logger = ForwardLoggerFieldTest.set_sink(sink)
+        @test forwarded_logger.sink === sink
+        @test get_log_level(forwarded_logger, :field) === Error
+        @test ForwardLoggerFieldTest.state[].logger.sink.stream === field_buf
     end
 end
 

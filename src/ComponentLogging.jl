@@ -3,9 +3,9 @@ using Logging
 include("PlainLogger.jl")
 export PlainLogger
 
-export ComponentLogger, get_logger, set_module_logger, set_log_level!, get_log_level, with_min_level
+export ComponentLogger, set_sink, set_log_level!, get_log_level, with_min_level
 export clog, cdebug, cinfo, cwarn, cerror, clogenabled
-export @bind_logger, @clog, @cdebug, @cinfo, @cwarn, @cerror, @forward_logger
+export @clog, @cdebug, @cinfo, @cwarn, @cerror, @forward_logger
 
 const RuleKey = NTuple{N, Symbol} where {N}
 const Default_Sym = :__default__
@@ -30,29 +30,27 @@ mutable struct ComponentLogger{L<:AbstractLogger} <: AbstractLogger
     lock::ReentrantLock
 end
 
-function ComponentLogger(rules::Dict{RuleKey, LogLevel}=Dict{RuleKey, LogLevel}((Default_Sym,) => Info); sink=ConsoleLogger(Debug))
-    rules = copy(rules)
+ComponentLogger(args::Pair...; sink=ConsoleLogger(Debug)) = _ComponentLogger(args, sink)
+ComponentLogger(rules::AbstractDict; sink=ConsoleLogger(Debug)) = _ComponentLogger(rules, sink)
+
+function _ComponentLogger(entries, sink)
+    rules = sizehint!(Dict{RuleKey, LogLevel}((Default_Sym,) => Info), length(entries) + 1)
+    for (grp, lvl) in entries; rules[_tokey(grp)] = _tolevel(lvl) end
     state = _LoggerState(rules, minimum(values(rules)))
     return ComponentLogger(state, sink, ReentrantLock())
 end
 
-function ComponentLogger(nonstdrules::AbstractDict; sink=ConsoleLogger(Debug))
-    rules = sizehint!(Dict{RuleKey, LogLevel}((Default_Sym,) => Info), length(nonstdrules) + 1)
-    for (k, v) in nonstdrules
-        if !(v isa LogLevel || v isa Integer)
-            throw(ArgumentError("the value of dict should be either LogLevel or Integer, got $(typeof(v))"))
-        end
-        rules[_tokey(k)] = _tolevel(v)
-    end
-    return ComponentLogger(rules; sink)
+function set_sink(logger::ComponentLogger, sink::AbstractLogger)
+    state = @atomic :acquire logger.state
+    return ComponentLogger(state, sink, ReentrantLock())
 end
 
 function set_log_level!(logger::ComponentLogger, args::Pair{<:Union{Symbol, RuleKey}, <:Union{Integer, LogLevel}}...)
     @lock logger.lock begin
         state = @atomic :acquire logger.state
         rules = copy(state.rules)
-        @inbounds for (group, lvl) in args
-            rules[_tokey(group)] = _tolevel(lvl)
+        @inbounds for (grp, lvl) in args
+            rules[_tokey(grp)] = _tolevel(lvl)
         end
         state = _LoggerState(rules, minimum(values(rules)))
         @atomic :release logger.state = state
@@ -65,12 +63,12 @@ function get_log_level(logger::ComponentLogger, group::Union{Symbol, RuleKey})::
     return _effective_level(state.rules, group)
 end
 
-function with_min_level(f::F, logger::ComponentLogger, lvl::Union{Integer, LogLevel}) where {F}
-    lvl = LogLevel(lvl)
+function with_min_level(f::F, logger::ComponentLogger, level::Union{Integer, LogLevel}) where {F}
+    level = LogLevel(level)
     lock(logger.lock)
     try
         oldstate = @atomic :acquire logger.state
-        @atomic :release logger.state = _LoggerState(oldstate.rules, lvl)
+        @atomic :release logger.state = _LoggerState(oldstate.rules, level)
         try
             return f()
         finally

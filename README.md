@@ -41,14 +41,14 @@ Output:
 
 ```text
 ComponentLogger
-  sink:  PlainLogger
-  min:   0
-  rules: 4
-   ├─ :__default__     0
-   ├─ :core            0
-   ├─ :io              1000
-   └─ :net
-      └─ :http         2000
+    sink:  PlainLogger
+    min:   Info
+    rules: 4
+     ├─ :__default__     Info
+     ├─ :core            Info
+     ├─ :io              Warn
+     └─ :net
+            └─ :http         Error
 ```
 
 **What the rules mean**
@@ -143,6 +143,8 @@ What if generating the log message itself incurs a computational cost? `@clog` p
 **Example:**
 
 ```julia
+using Statistics: mean, std
+
 arr = randn(1000)
 sumsq = 0.0
 for i in eachindex(arr)
@@ -166,7 +168,7 @@ If the final message expression evaluates to `nothing`, no log record is emitted
 ```
 
 This creates module-local forwarding methods for `clog`, `cdebug`, `cinfo`, `cwarn`, `cerror`, `clogenabled`,
-`set_log_level!`, `get_log_level`, `with_min_level`, `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros. The logger expression is bound where
+`set_sink`, `set_log_level!`, `get_log_level`, `with_min_level`, `@clog`, `@cdebug`, `@cinfo`, `@cwarn`, and `@cerror` macros. The logger expression is bound where
 `@forward_logger` is declared, including when the generated macro is imported
 by another module.
 
@@ -183,6 +185,15 @@ For example, to benchmark `compute_sumsq()` without any logging‑related work:
 with_min_level(logger, 2000) do
     @benchmark compute_sumsq()
 end
+```
+
+### `set_sink`
+
+`set_sink(logger, sink)` returns a new `ComponentLogger` with the supplied sink and the current rules from `logger`.
+
+```julia
+logger = ComponentLogger(:io => 1000) # the default sink is ConsoleLogger(Debug)
+new_logger = set_sink(logger, PlainLogger())
 ```
 
 ## PlainLogger
@@ -206,10 +217,10 @@ Output:
 
 ```julia
 Hello, Julia!
-@ README.md:183
+@ Main README.md :203
 ```
 
-`PlainLogger` uses `show` with `MIME"text/plain"` to display 2D and 3D matrices, as it improves matrix readability. For other values, it prints them directly using `print`.
+`PlainLogger` uses `show` with `MIME"text/plain"` to display arrays with two or more dimensions, as it improves matrix readability. For other values, it prints them directly using `print`.
 
 ```julia
 with_logger(logger) do
@@ -224,7 +235,7 @@ Output:
  8  5  6
  3  4  9
  7  8  5
-@ README.md:196
+@ Main README.md :218
 ```
 
 ## Benchmarking
